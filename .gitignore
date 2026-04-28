@@ -1,0 +1,12 @@
+gradle.properties
+.env
+local.properties
+
+.gradle/
+build/
+app/build/
+
+.idea/
+.vscode/
+.venv/
+*.iml

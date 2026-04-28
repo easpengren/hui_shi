@@ -1,0 +1,10 @@
+wing: tts_reader
+rooms:
+- name: app
+  description: Files from app/
+  keywords:
+  - app
+  - app
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []
