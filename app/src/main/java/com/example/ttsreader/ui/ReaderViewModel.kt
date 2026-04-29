@@ -14,10 +14,10 @@ import com.example.ttsreader.data.NoteEntity
 import com.example.ttsreader.ingest.ImportedDocument
 import com.example.ttsreader.playback.AudioPlaybackEngine
 import com.example.ttsreader.repo.ReaderRepository
-import com.example.ttsreader.tts.AndroidTtsClient
 import com.example.ttsreader.tts.CacheManager
 import com.example.ttsreader.tts.FallbackTtsClient
-import com.example.ttsreader.tts.TtsAiClient
+import com.example.ttsreader.tts.KokoroCloudTtsClient
+import com.example.ttsreader.tts.KokoroNativeTtsClient
 import com.example.ttsreader.tts.TtsClient
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,37 +44,51 @@ data class ReaderUiState(
     val cloudFallbackMessage: String? = null,
     val status: String = "Paste, share, or upload text to begin.",
     val bookmarks: List<BookmarkEntity> = emptyList(),
-    val notes: List<NoteEntity> = emptyList()
+    val notes: List<NoteEntity> = emptyList(),
+    val availableVoices: List<String> = listOf("af_bella", "af_sky", "en_us_amy", "en_us_matthew"),
+    val selectedVoice: String = "af_bella"
 )
 
 class ReaderViewModel(application: Application) : AndroidViewModel(application) {
+        fun updateSelectedVoice(voice: String) {
+            _uiState.value = _uiState.value.copy(selectedVoice = voice)
+        }
     private val db = AppDatabase.get(application)
-    private val hasApiKey = BuildConfig.TTS_API_KEY.isNotBlank()
-    private val isLocalTtsMode = !hasApiKey
-    private val bookPreparer = BookPreparer(maxChunkLength = if (isLocalTtsMode) 900 else 2500)
-    private val localTtsClient = AndroidTtsClient(application, CacheManager(application))
+    private val hasCloudApiKey = BuildConfig.KOKORO_API_KEY.isNotBlank()
+    private val isNativeOnlyMode = !hasCloudApiKey
+    private val bookPreparer = BookPreparer(maxChunkLength = if (isNativeOnlyMode) 900 else 2500)
+    private val nativeTtsClient = KokoroNativeTtsClient(
+        context = application,
+        cacheManager = CacheManager(application),
+        preferredEnginePackage = BuildConfig.KOKORO_TTS_ENGINE.ifBlank { null }
+    )
     @Volatile
     private var lastCloudFailure: String? = null
     @Volatile
     private var fallbackUsedThisBuild: Boolean = false
-    private val ttsClient: TtsClient = if (hasApiKey) {
+    // Always use latest selectedVoice by creating the TTS client on demand
+    private fun buildTtsClient(): TtsClient = if (hasCloudApiKey) {
         FallbackTtsClient(
-            primary = TtsAiClient(CacheManager(application)),
-            fallback = localTtsClient,
+            primary = KokoroCloudTtsClient(CacheManager(getApplication())) { _uiState.value.selectedVoice },
+            fallback = nativeTtsClient,
             onPrimaryFailure = { throwable ->
                 fallbackUsedThisBuild = true
                 lastCloudFailure = throwable.message?.take(180) ?: throwable::class.java.simpleName
             }
         )
     } else {
-        localTtsClient
+        nativeTtsClient
     }
 
-    private val repository = ReaderRepository(
-        dao = db.readerDao(),
-        preparer = bookPreparer,
-        ttsClient = ttsClient
-    )
+    private val ttsClient: TtsClient
+        get() = buildTtsClient()
+
+    private val repository: ReaderRepository
+        get() = ReaderRepository(
+            dao = db.readerDao(),
+            preparer = bookPreparer,
+            ttsClient = ttsClient
+        )
 
     val playbackEngine = AudioPlaybackEngine(application)
     private val minPlayableChunks = 2
@@ -175,10 +189,10 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                     buildProgressCurrent = 0,
                     buildProgressTotal = prepared.chunks.size,
                     cloudFallbackMessage = null,
-                    status = if (isLocalTtsMode) {
-                        "Generating audio chunks with device voice..."
+                    status = if (isNativeOnlyMode) {
+                        "Generating audio chunks with native voice..."
                     } else {
-                        "Generating audio chunks..."
+                        "Generating audio chunks with Kokoro cloud..."
                     }
                 )
 
@@ -193,7 +207,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                         repository.synthesizeAllChunks(
                             book = prepared,
                             onChunkStarted = { current, total ->
-                                val mode = if (isLocalTtsMode) "device voice" else "cloud voice"
+                                val mode = if (isNativeOnlyMode) "native voice" else "Kokoro cloud"
                                 _uiState.value = _uiState.value.copy(
                                     buildProgressCurrent = (current - 1).coerceAtLeast(0),
                                     buildProgressTotal = total,
@@ -203,10 +217,10 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                         ) { entity ->
                             readyChunks += 1
                             progressiveChunks += entity
-                            val mode = if (isLocalTtsMode) "device voice" else "cloud voice"
+                            val mode = if (isNativeOnlyMode) "native voice" else "Kokoro cloud"
                             val effectiveMode = when {
-                                isLocalTtsMode -> "device voice"
-                                fallbackUsedThisBuild -> "cloud + local fallback"
+                                isNativeOnlyMode -> "native voice"
+                                fallbackUsedThisBuild -> "Kokoro cloud + native fallback"
                                 else -> mode
                             }
 
@@ -231,7 +245,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                                 buildProgressCurrent = readyChunks,
                                 buildProgressTotal = totalChunks,
                                 cloudFallbackMessage = if (fallbackUsedThisBuild) {
-                                    lastCloudFailure?.let { "Cloud unavailable: $it. Using local voice fallback." }
+                                    lastCloudFailure?.let { "Kokoro cloud unavailable: $it. Using native voice fallback." }
                                 } else {
                                     null
                                 },
@@ -249,7 +263,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                             buildProgressCurrent = 0,
                             buildProgressTotal = 0,
                             cloudFallbackMessage = if (fallbackUsedThisBuild) {
-                                lastCloudFailure?.let { "Cloud unavailable: $it. Using local voice fallback." }
+                                lastCloudFailure?.let { "Kokoro cloud unavailable: $it. Using native voice fallback." }
                             } else {
                                 null
                             },
@@ -264,7 +278,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                             buildProgressCurrent = 0,
                             buildProgressTotal = 0,
                             cloudFallbackMessage = if (fallbackUsedThisBuild) {
-                                lastCloudFailure?.let { "Cloud unavailable: $it. Using local voice fallback." }
+                                lastCloudFailure?.let { "Kokoro cloud unavailable: $it. Using native voice fallback." }
                             } else {
                                 null
                             },
@@ -279,7 +293,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                     buildProgressCurrent = 0,
                     buildProgressTotal = 0,
                     cloudFallbackMessage = if (fallbackUsedThisBuild) {
-                        lastCloudFailure?.let { "Cloud unavailable: $it. Using local voice fallback." }
+                        lastCloudFailure?.let { "Kokoro cloud unavailable: $it. Using native voice fallback." }
                     } else {
                         null
                     },

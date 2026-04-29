@@ -4,13 +4,22 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val rawTtsApiBaseUrl = (project.findProperty("TTS_API_BASE_URL") as String?)
+val kokoroTtsEngine = (project.findProperty("KOKORO_TTS_ENGINE") as String?)
+    ?: System.getenv("KOKORO_TTS_ENGINE")
+    ?: ""
+val rawKokoroApiBaseUrl = (project.findProperty("KOKORO_API_BASE_URL") as String?)
+    ?: (project.findProperty("KOKORO_API_URL") as String?)
+    ?: (project.findProperty("TTS_API_BASE_URL") as String?)
     ?: (project.findProperty("TTS_API_URL") as String?)
+    ?: System.getenv("KOKORO_API_BASE_URL")
+    ?: System.getenv("KOKORO_API_URL")
     ?: System.getenv("TTS_API_BASE_URL")
     ?: System.getenv("TTS_API_URL")
     ?: "https://api.tts.ai/"
-val ttsApiBaseUrl = if (rawTtsApiBaseUrl.endsWith("/")) rawTtsApiBaseUrl else "$rawTtsApiBaseUrl/"
-val ttsApiKey = (project.findProperty("TTS_API_KEY") as String?)
+val kokoroApiBaseUrl = if (rawKokoroApiBaseUrl.endsWith("/")) rawKokoroApiBaseUrl else "$rawKokoroApiBaseUrl/"
+val kokoroApiKey = (project.findProperty("KOKORO_API_KEY") as String?)
+    ?: (project.findProperty("TTS_API_KEY") as String?)
+    ?: System.getenv("KOKORO_API_KEY")
     ?: System.getenv("TTS_API_KEY")
     ?: ""
 
@@ -30,8 +39,9 @@ android {
             useSupportLibrary = true
         }
 
-        buildConfigField("String", "TTS_API_BASE_URL", "\"$ttsApiBaseUrl\"")
-        buildConfigField("String", "TTS_API_KEY", "\"$ttsApiKey\"")
+        buildConfigField("String", "KOKORO_TTS_ENGINE", "\"$kokoroTtsEngine\"")
+        buildConfigField("String", "KOKORO_API_BASE_URL", "\"$kokoroApiBaseUrl\"")
+        buildConfigField("String", "KOKORO_API_KEY", "\"$kokoroApiKey\"")
     }
 
     buildTypes {

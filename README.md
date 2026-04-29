@@ -1,6 +1,6 @@
 # TTS Reader (Android)
 
-Prototype Android app that reads shared/uploaded text using TTS.ai with:
+Prototype Android app that reads shared/uploaded text using Kokoro cloud synthesis on-device, with native Android fallback, plus:
 - text cleaning (header/footer and superscript/footnote stripping)
 - PDF extraction with page coordinates and repeated-region header/footer detection
 - EPUB parsing with chapter-aware preparation
@@ -20,14 +20,15 @@ Prototype Android app that reads shared/uploaded text using TTS.ai with:
 - EPUB: spine-order chapter extraction with HTML-to-text conversion
 - Plain text: line batching into synthetic pages
 
-## Configure TTS.ai
+## Configure Kokoro Cloud + Native Fallback
 Set these build config fields in [app/build.gradle.kts](app/build.gradle.kts):
-- `TTS_API_BASE_URL` (default `https://api.tts.ai/`)
-- `TTS_API_KEY` (empty for anonymous free tier if allowed)
+- `KOKORO_API_BASE_URL` (default `https://api.tts.ai/`, legacy `TTS_API_BASE_URL` alias supported)
+- `KOKORO_API_KEY` (legacy `TTS_API_KEY` alias supported)
+- `KOKORO_TTS_ENGINE` (optional Android engine package to prefer for fallback; blank uses system default)
 
 ## Modules
 - `core`: text preparation pipeline
-- `tts`: network + audio cache
+- `tts`: Kokoro cloud synthesis + native fallback + audio cache
 - `data`: Room schema and DAO
 - `repo`: orchestration layer
 - `playback`: ExoPlayer wrapper
@@ -41,3 +42,7 @@ Set these build config fields in [app/build.gradle.kts](app/build.gradle.kts):
 ## Notes
 - Word highlighting uses estimated per-chunk timing from playback progress; it is intentionally approximate.
 - Shared text import is direct. Shared binary documents still come through the upload picker path rather than `ACTION_SEND` stream handling.
+
+## Self-Hosting
+- Rollout runbook (home server to Hetzner): [docs/SELF_HOST_ROLLOUT.md](docs/SELF_HOST_ROLLOUT.md)
+- Docker self-host starter stack: [selfhost/README.md](selfhost/README.md)

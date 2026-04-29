@@ -8,31 +8,32 @@
 
 ## What Works
 - Local Android TTS path is stable for large docs and problematic PDF/Markdown content.
-- Cloud TTS path is integrated with request/response handling, queue polling, and diagnostics.
-- Automatic fallback from cloud to local is in place to avoid crashes.
+- Kokoro cloud path is integrated for chunked synthesis from the device.
+- Native Android fallback is integrated when cloud synthesis fails.
 - Build Audio supports progressive generation with early playback and background chunk generation.
 - UI safe-area fix applied for top controls.
 
 ## Current TTS Behavior
-- If cloud succeeds, synthesis runs in cloud mode.
-- If cloud fails for any chunk, fallback uses local TTS for continuity.
-- UI shows status/progress and a cloud fallback message only when fallback is used.
+- If cloud succeeds, synthesis runs in Kokoro cloud mode.
+- If cloud fails for any chunk, fallback uses native Android TTS for continuity.
+- If `KOKORO_TTS_ENGINE` is configured and unavailable, native fallback uses the system default engine.
 
 ## Configuration
 - Key/value loaded from `gradle.properties` or environment variables:
-  - `TTS_API_KEY`
-  - `TTS_API_BASE_URL` (also supports `TTS_API_URL` alias)
-- URL is normalized with trailing slash at build time.
+-  - `KOKORO_API_BASE_URL` (also supports `KOKORO_API_URL`, `TTS_API_BASE_URL`, and `TTS_API_URL` aliases)
+-  - `KOKORO_API_KEY` (also supports `TTS_API_KEY` alias)
+  - `KOKORO_TTS_ENGINE` (optional Android engine package)
 
 ## Known Notes
-- Cloud provider contract can vary by endpoint model/voice behavior; fallback ensures user flow remains functional.
+- On-device voice quality and language support depend on installed Android TTS engines/voices.
+- Cloud provider contract may vary by endpoint behavior; fallback preserves playback continuity.
 - Large PDFs will still take time due to chunk count and synthesis duration.
 
 ## Recommended Next Steps
-1. Add explicit voice picker UI for cloud voice IDs (and optional local engine voice options).
+1. Add explicit voice picker UI for cloud voice IDs plus installed local fallback voices.
 2. Add persistent resume of unfinished chunk builds after app restart.
 3. Add a "fast mode" for very large docs (smaller first batch + immediate play).
-4. Add integration tests that mock cloud queued responses and fallback transitions.
+4. Add integration tests for cloud queue responses and fallback transitions.
 
 ## Operational Commands
 - Build/install debug:

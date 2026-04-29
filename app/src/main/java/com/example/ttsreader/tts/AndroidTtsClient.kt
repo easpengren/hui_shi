@@ -18,7 +18,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 class AndroidTtsClient(
     context: Context,
-    private val cacheManager: CacheManager
+    private val cacheManager: CacheManager,
+    private val preferredEnginePackage: String? = null
 ) : TtsClient {
     private val synthesisTimeoutMs = 30_000L
     private val linkRegex = Regex("\\[([^\\]]+)]\\(([^)]+)\\)")
@@ -34,30 +35,18 @@ class AndroidTtsClient(
 
     init {
         Handler(Looper.getMainLooper()).post {
-            val tts = TextToSpeech(appContext) { status ->
-                initStatus.complete(status)
+            createEngine(preferredEnginePackage) { preferredStatus, preferredEngine ->
+                if (preferredStatus == TextToSpeech.SUCCESS || preferredEnginePackage.isNullOrBlank()) {
+                    attachEngine(preferredEngine)
+                    initStatus.complete(preferredStatus)
+                } else {
+                    preferredEngine.shutdown()
+                    createEngine(null) { fallbackStatus, fallbackEngine ->
+                        attachEngine(fallbackEngine)
+                        initStatus.complete(fallbackStatus)
+                    }
+                }
             }
-            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
-
-                override fun onDone(utteranceId: String?) {
-                    utteranceId ?: return
-                    pendingUtterances.remove(utteranceId)?.complete(Unit)
-                }
-
-                override fun onError(utteranceId: String?) {
-                    utteranceId ?: return
-                    pendingUtterances.remove(utteranceId)
-                        ?.completeExceptionally(IllegalStateException("Local TTS failed for utterance $utteranceId"))
-                }
-
-                override fun onError(utteranceId: String?, errorCode: Int) {
-                    utteranceId ?: return
-                    pendingUtterances.remove(utteranceId)
-                        ?.completeExceptionally(IllegalStateException("Local TTS failed for utterance $utteranceId (code=$errorCode)"))
-                }
-            })
-            engine = tts
         }
     }
 
@@ -137,5 +126,44 @@ class AndroidTtsClient(
             .replace(Regex("[`*_~]"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
+    }
+
+    private fun createEngine(
+        enginePackage: String?,
+        onReady: (status: Int, engine: TextToSpeech) -> Unit
+    ) {
+        lateinit var ttsRef: TextToSpeech
+        val initListener = TextToSpeech.OnInitListener { status ->
+            onReady(status, ttsRef)
+        }
+        ttsRef = if (enginePackage.isNullOrBlank()) {
+            TextToSpeech(appContext, initListener)
+        } else {
+            TextToSpeech(appContext, initListener, enginePackage)
+        }
+    }
+
+    private fun attachEngine(tts: TextToSpeech) {
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+
+            override fun onDone(utteranceId: String?) {
+                utteranceId ?: return
+                pendingUtterances.remove(utteranceId)?.complete(Unit)
+            }
+
+            override fun onError(utteranceId: String?) {
+                utteranceId ?: return
+                pendingUtterances.remove(utteranceId)
+                    ?.completeExceptionally(IllegalStateException("Local TTS failed for utterance $utteranceId"))
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                utteranceId ?: return
+                pendingUtterances.remove(utteranceId)
+                    ?.completeExceptionally(IllegalStateException("Local TTS failed for utterance $utteranceId (code=$errorCode)"))
+            }
+        })
+        engine = tts
     }
 }

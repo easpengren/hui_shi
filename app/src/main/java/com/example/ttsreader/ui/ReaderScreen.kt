@@ -1,6 +1,15 @@
 package com.example.ttsreader.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextField
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,12 +21,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +50,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun ReaderScreen(viewModel: ReaderViewModel, incomingSharedText: String?) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var noteInput by remember { mutableStateOf("") }
+    var voiceMenuExpanded by remember { mutableStateOf(false) }
+    var showVoiceSnackbar by remember { mutableStateOf<String?>(null) }
+    val voices = state.availableVoices
 
     LaunchedEffect(incomingSharedText) {
         if (!incomingSharedText.isNullOrBlank()) {
@@ -52,10 +67,64 @@ fun ReaderScreen(viewModel: ReaderViewModel, incomingSharedText: String?) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Android TTS.ai Reader", style = MaterialTheme.typography.headlineSmall)
+        Text("Android Kokoro Reader", style = MaterialTheme.typography.headlineSmall)
         Text(state.status, style = MaterialTheme.typography.bodyMedium)
         state.cloudFallbackMessage?.let { msg ->
             Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
+        // Debug info for voice picker
+        Text("[DEBUG] Selected voice: ${state.selectedVoice}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        Text("[DEBUG] Available voices: ${state.availableVoices.joinToString(", ")}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+
+        // Voice Picker UI (robust)
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("Voice:", modifier = Modifier.padding(end = 8.dp))
+            Box {
+                TextField(
+                    value = state.selectedVoice,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Select Voice") },
+                    modifier = Modifier
+                        .clickable { voiceMenuExpanded = true }
+                        .width(200.dp)
+                )
+                DropdownMenu(
+                    expanded = voiceMenuExpanded,
+                    onDismissRequest = { voiceMenuExpanded = false }
+                ) {
+                    voices.forEach { voice ->
+                        DropdownMenuItem(
+                            text = { Text(voice) },
+                            onClick = {
+                                viewModel.updateSelectedVoice(voice)
+                                voiceMenuExpanded = false
+                                showVoiceSnackbar = voice
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Snackbar for voice selection
+        showVoiceSnackbar?.let { selected ->
+            androidx.compose.material3.Snackbar(
+                modifier = Modifier.padding(8.dp),
+                action = {
+                    androidx.compose.material3.TextButton(onClick = { showVoiceSnackbar = null }) {
+                        androidx.compose.material3.Text("Dismiss")
+                    }
+                }
+            ) {
+                androidx.compose.material3.Text("Selected voice: $selected")
+            }
+            // Auto-dismiss after a short delay
+            LaunchedEffect(selected) {
+                kotlinx.coroutines.delay(1500)
+                showVoiceSnackbar = null
+            }
         }
 
         OutlinedTextField(
