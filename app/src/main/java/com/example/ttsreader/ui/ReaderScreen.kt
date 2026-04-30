@@ -69,6 +69,14 @@ fun ReaderScreen(viewModel: ReaderViewModel, incomingSharedText: String?) {
     ) {
         Text("Android Kokoro Reader", style = MaterialTheme.typography.headlineSmall)
         Text(state.status, style = MaterialTheme.typography.bodyMedium)
+        if (state.isFocusPaused) {
+            Text(
+                "Paused - assistant active",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold
+            )
+        }
         state.cloudFallbackMessage?.let { msg ->
             Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }

@@ -1,7 +1,11 @@
 package com.example.ttsreader.playback
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -9,10 +13,57 @@ import com.example.ttsreader.data.ChunkEntity
 import java.io.File
 
 class AudioPlaybackEngine(context: Context) {
-    private val player = ExoPlayer.Builder(context).build()
+
+    private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val player = ExoPlayer.Builder(appContext).build()
+
     private var chunkListenerAttached = false
     private var loadedChunks: MutableList<ChunkEntity> = mutableListOf()
     private var onChunkChangedCallback: ((ChunkEntity) -> Unit)? = null
+
+    /** Called when another app steals audio focus (e.g. the assistant app). */
+    var onFocusLost: (() -> Unit)? = null
+    /** Called when focus is regained after a transient loss. */
+    var onFocusGained: (() -> Unit)? = null
+
+    private var wasPlayingBeforeLoss = false
+
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // Permanent loss (another app took over) — pause and don't auto-resume.
+                wasPlayingBeforeLoss = false
+                if (player.isPlaying) player.pause()
+                onFocusLost?.invoke()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Transient loss (e.g. assistant speaks) — pause and remember to resume.
+                wasPlayingBeforeLoss = player.isPlaying
+                if (player.isPlaying) player.pause()
+                onFocusLost?.invoke()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (wasPlayingBeforeLoss) {
+                    player.play()
+                    onFocusGained?.invoke()
+                }
+                wasPlayingBeforeLoss = false
+            }
+        }
+    }
+
+    private val focusRequest: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        )
+        .setAcceptsDelayedFocusGain(true)
+        .setOnAudioFocusChangeListener(focusListener)
+        .build()
 
     fun load(chunks: List<ChunkEntity>, onChunkChanged: (ChunkEntity) -> Unit) {
         loadedChunks = chunks.toMutableList()
@@ -36,7 +87,13 @@ class AudioPlaybackEngine(context: Context) {
         }
     }
 
-    fun play() = player.play()
+    fun play() {
+        val result = audioManager.requestAudioFocus(focusRequest)
+        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            player.play()
+        }
+        // AUDIOFOCUS_REQUEST_DELAYED: play() will be triggered via focusListener AUDIOFOCUS_GAIN
+    }
 
     fun appendChunk(chunk: ChunkEntity) {
         if (loadedChunks.any { it.chunkIndex == chunk.chunkIndex }) return
@@ -45,7 +102,11 @@ class AudioPlaybackEngine(context: Context) {
         player.addMediaItem(MediaItem.fromUri(Uri.fromFile(File(chunk.audioPath))))
     }
 
-    fun pause() = player.pause()
+    fun pause() {
+        wasPlayingBeforeLoss = false
+        player.pause()
+        audioManager.abandonAudioFocusRequest(focusRequest)
+    }
 
     fun seekToChunk(index: Int) {
         player.seekTo(index, 0L)
@@ -64,6 +125,8 @@ class AudioPlaybackEngine(context: Context) {
     fun isPlaying(): Boolean = player.isPlaying
 
     fun release() {
+        wasPlayingBeforeLoss = false
+        audioManager.abandonAudioFocusRequest(focusRequest)
         player.release()
     }
 }

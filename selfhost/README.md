@@ -1,33 +1,47 @@
-# Self-Host Starter (Home Server First)
+# Self-Host (Kokoro Direct)
 
-This starter gives you a local Docker stack that matches the Android app contract:
+Single-container Kokoro TTS server. The Android app and assistant app both talk directly
+to this service — no queue, no middleware.
 
-1. `POST /v1/tts/`
-2. `GET /v1/speech/results/?uuid=<id>`
-
-It is intended for queue/contract testing first.
-
-## What Is Included
-1. FastAPI API service (`api.py`)
-2. Redis queue
-3. Worker process (`worker.py`)
-4. Persistent local storage (`./data`)
-
-## Important
-The worker currently uses `SYNTH_BACKEND=stub` by default and generates deterministic WAV audio.
-This validates your app integration and long-job flow, but it is not real Kokoro inference yet.
-
-To add real Kokoro, replace `synthesize_stub(...)` in `worker.py` with your inference pipeline and set `SYNTH_BACKEND=kokoro`.
+## API
+- `POST /v1/audio/speech` — OpenAI-compatible, returns audio stream directly
+- `GET /health` — liveness check
 
 ## Quick Start
-1. Copy env template:
 
 ```bash
 cd selfhost
-cp .env.example .env
 ```
 
-2. Set required values in `.env`:
+Set your API key in the environment (or a `.env` file):
+
+```bash
+export KOKORO_API_KEY=your-key-here
+```
+
+Start the server:
+
+```bash
+docker compose up --build
+```
+
+Server is available at `http://localhost:8880`.
+
+## Configure Android App
+
+In `app/build.gradle.kts` or `gradle.properties`:
+
+```
+KOKORO_API_BASE_URL=http://<your-local-ip>:8880/
+KOKORO_API_KEY=your-key-here
+```
+
+Use your machine's LAN IP (not `localhost`) so the Android device can reach it.
+
+## Production (Hetzner)
+
+Same image, different `KOKORO_API_BASE_URL` in the app. Set `KOKORO_API_KEY` to a strong
+random value and put the server behind a reverse proxy with TLS.
    - `APP_API_KEY`
    - `BASE_PUBLIC_URL` (for home server URL; `http://localhost:8080` for local testing)
 

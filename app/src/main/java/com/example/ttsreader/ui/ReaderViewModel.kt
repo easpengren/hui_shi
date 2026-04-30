@@ -16,8 +16,7 @@ import com.example.ttsreader.playback.AudioPlaybackEngine
 import com.example.ttsreader.repo.ReaderRepository
 import com.example.ttsreader.tts.CacheManager
 import com.example.ttsreader.tts.FallbackTtsClient
-import com.example.ttsreader.tts.KokoroCloudTtsClient
-import com.example.ttsreader.tts.KokoroNativeTtsClient
+import com.example.ttsreader.tts.KokoroServerTtsClient
 import com.example.ttsreader.tts.TtsClient
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,6 +37,7 @@ data class ReaderUiState(
     val activeWordRange: WordRange? = null,
     val playbackSpeed: Float = 1.0f,
     val isLoading: Boolean = false,
+    val isFocusPaused: Boolean = false,
     val isBuildingAudio: Boolean = false,
     val buildProgressCurrent: Int = 0,
     val buildProgressTotal: Int = 0,
@@ -57,7 +57,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     private val hasCloudApiKey = BuildConfig.KOKORO_API_KEY.isNotBlank()
     private val isNativeOnlyMode = !hasCloudApiKey
     private val bookPreparer = BookPreparer(maxChunkLength = if (isNativeOnlyMode) 900 else 2500)
-    private val nativeTtsClient = KokoroNativeTtsClient(
+    private val nativeTtsClient = com.example.ttsreader.tts.AndroidTtsClient(
         context = application,
         cacheManager = CacheManager(application),
         preferredEnginePackage = BuildConfig.KOKORO_TTS_ENGINE.ifBlank { null }
@@ -69,7 +69,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     // Always use latest selectedVoice by creating the TTS client on demand
     private fun buildTtsClient(): TtsClient = if (hasCloudApiKey) {
         FallbackTtsClient(
-            primary = KokoroCloudTtsClient(CacheManager(getApplication())) { _uiState.value.selectedVoice },
+            primary = KokoroServerTtsClient(CacheManager(getApplication())) { _uiState.value.selectedVoice },
             fallback = nativeTtsClient,
             onPrimaryFailure = { throwable ->
                 fallbackUsedThisBuild = true
@@ -90,7 +90,16 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             ttsClient = ttsClient
         )
 
-    val playbackEngine = AudioPlaybackEngine(application)
+    val playbackEngine = AudioPlaybackEngine(application).also { engine ->
+        engine.onFocusLost = {
+            progressJob?.cancel()
+            _uiState.value = _uiState.value.copy(isFocusPaused = true)
+        }
+        engine.onFocusGained = {
+            startProgressLoop()
+            _uiState.value = _uiState.value.copy(isFocusPaused = false)
+        }
+    }
     private val minPlayableChunks = 2
     private val followAlongLeadMs = 220L
     private var progressJob: Job? = null

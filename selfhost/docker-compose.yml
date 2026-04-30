@@ -1,49 +1,5 @@
 services:
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-
-  api:
-    build:
-      context: ./server
-    restart: unless-stopped
-    env_file:
-      - ${ENV_FILE:-.env}
-    environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      STORAGE_ROOT: ${STORAGE_ROOT:-/data}
-      BASE_PUBLIC_URL: ${BASE_PUBLIC_URL:-http://localhost:8080}
-      APP_API_KEY: ${APP_API_KEY}
-      MAX_CHARS_PER_REQUEST: ${MAX_CHARS_PER_REQUEST:-2800}
-    volumes:
-      - ./data:/data
-    depends_on:
-      - redis
-    ports:
-      - "8080:8080"
-    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
-
-  worker:
-    build:
-      context: ./server
-    restart: unless-stopped
-    env_file:
-      - ${ENV_FILE:-.env}
-    environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      STORAGE_ROOT: ${STORAGE_ROOT:-/data}
-      JOB_TIMEOUT_SECONDS: ${JOB_TIMEOUT_SECONDS:-120}
-      KOKORO_MODEL: ${KOKORO_MODEL:-kokoro}
-      KOKORO_DEFAULT_VOICE: ${KOKORO_DEFAULT_VOICE:-af_bella}
-      SYNTH_BACKEND: ${SYNTH_BACKEND:-stub}
-    volumes:
-      - ./data:/data
-    depends_on:
-      - redis
-    command: ["python", "worker.py"]
-
-  kokoro-fastapi:
+  kokoro:
     build:
       context: ../kokoro-web
       dockerfile: docker/cpu/Dockerfile
@@ -51,4 +7,9 @@ services:
     ports:
       - "8880:8080"
     environment:
-      KOKORO_API_KEY: sk-tts-453828b986b24f36bad02d356686fcf0
+      KOKORO_API_KEY: ${KOKORO_API_KEY:-}
+    volumes:
+      - kokoro-models:/app/api/src/models
+
+volumes:
+  kokoro-models:
