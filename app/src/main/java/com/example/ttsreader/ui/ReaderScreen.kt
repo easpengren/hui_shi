@@ -67,7 +67,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, incomingSharedText: String?) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Android Kokoro Reader", style = MaterialTheme.typography.headlineSmall)
+        Text("Lu Ji", style = MaterialTheme.typography.headlineSmall)
         Text(state.status, style = MaterialTheme.typography.bodyMedium)
         if (state.isFocusPaused) {
             Text(
