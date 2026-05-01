@@ -1,0 +1,30 @@
+wing: tts_reader
+rooms:
+- name: gradle
+  description: Files from gradle/
+  keywords:
+  - gradle
+  - gradle
+- name: selfhost
+  description: Files from selfhost/
+  keywords:
+  - selfhost
+  - selfhost
+- name: app
+  description: Files from app/
+  keywords:
+  - app
+  - app
+- name: documentation
+  description: Files from docs/
+  keywords:
+  - documentation
+  - docs
+- name: backend
+  description: Files from server/
+  keywords:
+  - backend
+  - server
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []

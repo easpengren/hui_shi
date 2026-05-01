@@ -1,0 +1,48 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.g.dart
+*.freezed.dart
+doc/api/
+
+# Android
+android/local.properties
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/key.properties
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Runner/GeneratedPluginRegistrant.*
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Misc
+*.log
+.DS_Store
+
+# Python (kokoro-web)
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Docker
+kokoro-web/.git/

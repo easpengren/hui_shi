@@ -1,0 +1,23 @@
+services:
+  kokoro:
+    build:
+      context: ../kokoro-web
+      dockerfile: docker/cpu/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8880:8080"
+    environment:
+      KOKORO_API_KEY: ${KOKORO_API_KEY:-}
+    volumes:
+      - kokoro-models:/app/api/src/models
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 2G
+        reservations:
+          cpus: '0.50'
+          memory: 512M
+
+volumes:
+  kokoro-models:
