@@ -32,7 +32,11 @@ class TtsCache {
   }
 
   Future<File> put(
-      String bookId, int chunkIndex, String voice, Uint8List wav) async {
+    String bookId,
+    int chunkIndex,
+    String voice,
+    Uint8List wav,
+  ) async {
     final f = await _pathFor(bookId, chunkIndex, voice);
     await f.writeAsBytes(wav);
     return f;

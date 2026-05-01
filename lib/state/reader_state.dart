@@ -133,7 +133,10 @@ class ReaderState extends ChangeNotifier {
     title = result.title;
     rawText = cleanText(result.content);
     chunks = chunkText(rawText);
-    currentChunkIndex = startChunk.clamp(0, chunks.isEmpty ? 0 : chunks.length - 1);
+    currentChunkIndex = startChunk.clamp(
+      0,
+      chunks.isEmpty ? 0 : chunks.length - 1,
+    );
 
     await _playback.load(bookId, chunks, startIndex: currentChunkIndex);
     _playback.setEngine(selectedEngine);
@@ -169,10 +172,12 @@ class ReaderState extends ChangeNotifier {
         lastOpenedMs: DateTime.now().millisecondsSinceEpoch,
       ),
     );
-    await _library.save(existing.copyWith(
-      lastChunkIndex: currentChunkIndex,
-      lastOpenedMs: DateTime.now().millisecondsSinceEpoch,
-    ));
+    await _library.save(
+      existing.copyWith(
+        lastChunkIndex: currentChunkIndex,
+        lastOpenedMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 
   // ── Playback controls ─────────────────────────────────────────────────────
@@ -181,6 +186,12 @@ class ReaderState extends ChangeNotifier {
   Future<void> pause() => _playback.pause();
   Future<void> resume() => _playback.resume();
   Future<void> seekToChunk(int index) => _playback.seekToChunk(index);
+
+  /// Seek to [index] and immediately start playing from there.
+  Future<void> seekAndPlay(int index) async {
+    await _playback.seekToChunk(index);
+    await _playback.play();
+  }
 
   Future<void> setEngine(TtsEngine engine) async {
     selectedEngine = engine;

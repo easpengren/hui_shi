@@ -24,10 +24,10 @@ class PiperTtsClient {
     required Directory modelsDir,
     required String voice,
     required double speed,
-  })  : _cache = cache,
-        _modelsDir = modelsDir,
-        _voice = voice,
-        _speed = speed;
+  }) : _cache = cache,
+       _modelsDir = modelsDir,
+       _voice = voice,
+       _speed = speed;
 
   static Future<PiperTtsClient> create({
     String voice = kDefaultPiperVoice,
@@ -105,7 +105,9 @@ class PiperTtsClient {
       if (!entry.isFile) continue;
       // Strip leading archive directory (e.g. "vits-piper-en_US-lessac-medium/")
       final parts = entry.name.split('/');
-      final relative = parts.length > 1 ? parts.sublist(1).join('/') : entry.name;
+      final relative = parts.length > 1
+          ? parts.sublist(1).join('/')
+          : entry.name;
       if (relative.isEmpty) continue;
 
       final outFile = File('${voiceDir.path}/$relative');
@@ -161,7 +163,10 @@ class PiperTtsClient {
   }
 
   Future<File> synthesizeChunk(
-      String bookId, int chunkIndex, String text) async {
+    String bookId,
+    int chunkIndex,
+    String text,
+  ) async {
     final cached = await _cache.get(bookId, chunkIndex, _voice);
     if (cached != null) return cached;
 

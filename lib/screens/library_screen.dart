@@ -13,7 +13,8 @@ class LibraryScreen extends StatelessWidget {
         appBar: AppBar(title: const Text('Library')),
         body: state.library.isEmpty
             ? const Center(
-                child: Text('No books yet. Open a file on the Reader screen.'))
+                child: Text('No books yet. Open a file on the Reader screen.'),
+              )
             : ListView.builder(
                 itemCount: state.library.length,
                 itemBuilder: (context, index) {
@@ -53,8 +54,7 @@ class _LibraryTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: ListTile(
-        title: Text(entry.title,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(entry.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -86,17 +86,20 @@ class _LibraryTile extends StatelessWidget {
                 builder: (_) => AlertDialog(
                   title: const Text('Remove book?'),
                   content: Text(
-                      'Remove "${entry.title}" from your library? The file is not deleted.'),
+                    'Remove "${entry.title}" from your library? The file is not deleted.',
+                  ),
                   actions: [
                     TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel')),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
                     TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          onDelete();
-                        },
-                        child: const Text('Remove')),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        onDelete();
+                      },
+                      child: const Text('Remove'),
+                    ),
                   ],
                 ),
               ),

@@ -12,8 +12,10 @@ class ReaderScreen extends StatelessWidget {
     return Consumer<ReaderState>(
       builder: (context, state, _) => Scaffold(
         appBar: AppBar(
-          title: Text(state.title.isEmpty ? 'Lu Ji' : state.title,
-              overflow: TextOverflow.ellipsis),
+          title: Text(
+            state.title.isEmpty ? 'Lu Ji' : state.title,
+            overflow: TextOverflow.ellipsis,
+          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.library_books),
@@ -23,8 +25,9 @@ class ReaderScreen extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.folder_open),
               tooltip: 'Open file',
-              onPressed:
-                  state.loadState == LoadState.loading ? null : state.pickFile,
+              onPressed: state.loadState == LoadState.loading
+                  ? null
+                  : state.pickFile,
             ),
           ],
         ),
@@ -40,12 +43,71 @@ class ReaderScreen extends StatelessWidget {
   }
 }
 
-class _ContentArea extends StatelessWidget {
+class _ContentArea extends StatefulWidget {
   final ReaderState state;
   const _ContentArea({required this.state});
 
   @override
+  State<_ContentArea> createState() => _ContentAreaState();
+}
+
+class _ContentAreaState extends State<_ContentArea> {
+  final ScrollController _scroll = ScrollController();
+  // One key per chunk so we can measure item positions.
+  final List<GlobalKey> _keys = [];
+  int _lastScrolledIndex = -1;
+
+  @override
+  void didUpdateWidget(_ContentArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncKeys();
+    _maybeScrollToCurrent();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncKeys();
+  }
+
+  void _syncKeys() {
+    final needed = widget.state.chunks.length;
+    while (_keys.length < needed) {
+      _keys.add(GlobalKey());
+    }
+    if (_keys.length > needed) _keys.removeRange(needed, _keys.length);
+  }
+
+  void _maybeScrollToCurrent() {
+    final idx = widget.state.currentChunkIndex;
+    if (idx == _lastScrolledIndex) return;
+    if (_keys.isEmpty || idx >= _keys.length) return;
+    _lastScrolledIndex = idx;
+    // Schedule after the frame so the item is laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _keys[idx];
+      final ctx = key.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: 0.3, // place item ~30% from top
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final state = widget.state;
+
     if (state.loadState == LoadState.loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -53,8 +115,10 @@ class _ContentArea extends StatelessWidget {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text(state.errorMessage ?? 'Unknown error',
-              textAlign: TextAlign.center),
+          child: Text(
+            state.errorMessage ?? 'Unknown error',
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }
@@ -71,13 +135,18 @@ class _ContentArea extends StatelessWidget {
       );
     }
 
+    _syncKeys();
+    _maybeScrollToCurrent();
+
     return ListView.builder(
+      controller: _scroll,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: state.chunks.length,
       itemBuilder: (context, index) {
         final isCurrent = index == state.currentChunkIndex;
         return GestureDetector(
-          onTap: () => state.seekToChunk(index),
+          key: _keys[index],
+          onTap: () => state.seekAndPlay(index),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             margin: const EdgeInsets.symmetric(vertical: 4),
@@ -125,11 +194,15 @@ class _TtsControls extends StatelessWidget {
               // Engine selector
               SegmentedButton<TtsEngine>(
                 segments: TtsEngine.values
-                    .map((e) => ButtonSegment(
-                          value: e,
-                          label: Text(e.displayName,
-                              style: const TextStyle(fontSize: 12)),
-                        ))
+                    .map(
+                      (e) => ButtonSegment(
+                        value: e,
+                        label: Text(
+                          e.displayName,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    )
                     .toList(),
                 selected: {state.selectedEngine},
                 onSelectionChanged: (s) => state.setEngine(s.first),
@@ -177,7 +250,10 @@ class _PiperVoiceRow extends StatelessWidget {
         DropdownButtonFormField<String>(
           value: state.selectedVoice,
           decoration: const InputDecoration(
-              labelText: 'Voice', isDense: true, border: OutlineInputBorder()),
+            labelText: 'Voice',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
           items: kPiperVoices
               .map((v) => DropdownMenuItem(value: v, child: Text(v)))
               .toList(),
@@ -193,8 +269,10 @@ class _PiperVoiceRow extends StatelessWidget {
                   children: [
                     LinearProgressIndicator(value: state.downloadProgress),
                     const SizedBox(height: 2),
-                    Text(state.downloadStatus,
-                        style: Theme.of(context).textTheme.labelSmall),
+                    Text(
+                      state.downloadStatus,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ],
                 )
               : ElevatedButton.icon(
@@ -207,8 +285,10 @@ class _PiperVoiceRow extends StatelessWidget {
             children: [
               const Icon(Icons.check_circle, color: Colors.green, size: 16),
               const SizedBox(width: 4),
-              Text('Model ready',
-                  style: Theme.of(context).textTheme.labelSmall),
+              Text(
+                'Model ready',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
             ],
           ),
       ],
@@ -232,8 +312,9 @@ class _PlaybackBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          border:
-              Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+          border: Border(
+            top: BorderSide(color: Theme.of(context).dividerColor),
+          ),
         ),
         child: Row(
           children: [
@@ -259,7 +340,9 @@ class _PlaybackBar extends StatelessWidget {
                     width: 48,
                     height: 48,
                     child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2)))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
                 : IconButton(
                     iconSize: 40,
                     icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
@@ -280,8 +363,8 @@ class _PlaybackBar extends StatelessWidget {
               icon: const Icon(Icons.skip_next),
               onPressed:
                   canPlay && state.currentChunkIndex < state.chunks.length - 1
-                      ? () => state.seekToChunk(state.currentChunkIndex + 1)
-                      : null,
+                  ? () => state.seekToChunk(state.currentChunkIndex + 1)
+                  : null,
             ),
           ],
         ),

@@ -1,42 +1,48 @@
-# Handoff - Hui Shi TTS Reader
+# Handoff - Lu Ji Flutter Reader
 
 ## Snapshot
-- Platform: Android (Kotlin + Compose + Room + Media3).
-- App name/icon: Hui Shi branding integrated.
-- Ingestion: plain text, PDF (positioned extraction + header/footer suppression), EPUB (chapter-aware parsing).
-- Playback: chunked audio with follow-along highlighting and progress sync.
+- Primary project path: /home/ericaspen/projects/lu_ji
+- App stack: Flutter + Provider state + just_audio playback
+- Platforms configured: Android and Linux
+- File ingest: TXT, EPUB, PDF (pdfrx text extraction)
+- TTS engines:
+  - Piper offline via sherpa_onnx
+  - System TTS via flutter_tts (works on Android/iOS/macOS/web; guarded as no-op on Linux)
 
-## What Works
-- Local Android TTS path is stable for large docs and problematic PDF/Markdown content.
-- Kokoro cloud path is integrated for chunked synthesis from the device.
-- Native Android fallback is integrated when cloud synthesis fails.
-- Build Audio supports progressive generation with early playback and background chunk generation.
-- UI safe-area fix applied for top controls.
+## Current Status
+- Flutter app builds and runs:
+  - Android debug APK builds successfully
+  - Linux desktop run works for UI testing
+- Reader behavior updated:
+  - Current highlighted chunk now auto-scrolls into view during playback
+  - Tapping a chunk now seeks and starts playback from that position
+- Library persistence is present via shared_preferences
+- Repo state:
+  - Remote main currently points to Flutter Lu Ji tree
+  - Kotlin history preserved on remote branch kotlin
+  - Remote URL still uses repo name hui_shi (rename to lu_ji still pending on GitHub)
 
-## Current TTS Behavior
-- If cloud succeeds, synthesis runs in Kokoro cloud mode.
-- If cloud fails for any chunk, fallback uses native Android TTS for continuity.
-- If `KOKORO_TTS_ENGINE` is configured and unavailable, native fallback uses the system default engine.
+## Important Runtime Notes
+- Linux desktop is for UI/smoke testing; system TTS plugin support is limited there.
+- For real audio validation, use Android phone testing with both engines.
+- Piper model download is required before offline voice playback.
 
-## Configuration
-- Key/value loaded from `gradle.properties` or environment variables:
--  - `KOKORO_API_BASE_URL` (also supports `KOKORO_API_URL`, `TTS_API_BASE_URL`, and `TTS_API_URL` aliases)
--  - `KOKORO_API_KEY` (also supports `TTS_API_KEY` alias)
-  - `KOKORO_TTS_ENGINE` (optional Android engine package)
-
-## Known Notes
-- On-device voice quality and language support depend on installed Android TTS engines/voices.
-- Cloud provider contract may vary by endpoint behavior; fallback preserves playback continuity.
-- Large PDFs will still take time due to chunk count and synthesis duration.
-
-## Recommended Next Steps
-1. Add explicit voice picker UI for cloud voice IDs plus installed local fallback voices.
-2. Add persistent resume of unfinished chunk builds after app restart.
-3. Add a "fast mode" for very large docs (smaller first batch + immediate play).
-4. Add integration tests for cloud queue responses and fallback transitions.
+## Open Work / Next Focus
+1. Phone-side reading quality validation (highest priority):
+   - Chunk boundary quality
+   - Text cleanup fidelity
+   - Highlight/audio synchronization
+   - Resume and tap-to-start behavior under real use
+2. Collect concrete repro examples from phone runs and tune chunking/cleanup rules.
+3. Optional: add iOS platform scaffolding and iOS permission/config wiring.
+4. Optional: add regression tests around chunking and playback position transitions.
 
 ## Operational Commands
-- Build/install debug:
-  - `./gradlew :app:installDebug`
-- Launch on connected device:
-  - `/home/ericaspen/Android/Sdk/platform-tools/adb shell am start -n com.example.ttsreader/.MainActivity`
+- Get dependencies:
+  - bash -c "cd /home/ericaspen/projects/lu_ji && flutter pub get"
+- Analyze:
+  - bash -c "cd /home/ericaspen/projects/lu_ji && flutter analyze"
+- Run on Linux:
+  - bash -c "cd /home/ericaspen/projects/lu_ji && flutter run -d linux"
+- Build Android debug APK:
+  - bash -c "cd /home/ericaspen/projects/lu_ji && flutter build apk --debug"

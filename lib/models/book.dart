@@ -17,7 +17,8 @@ class LibraryEntry {
     required this.lastOpenedMs,
   });
 
-  LibraryEntry copyWith({int? lastChunkIndex, int? lastOpenedMs}) => LibraryEntry(
+  LibraryEntry copyWith({int? lastChunkIndex, int? lastOpenedMs}) =>
+      LibraryEntry(
         id: id,
         title: title,
         filePath: filePath,
@@ -28,22 +29,22 @@ class LibraryEntry {
       );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'filePath': filePath,
-        'sourceType': sourceType,
-        'lastChunkIndex': lastChunkIndex,
-        'totalChunks': totalChunks,
-        'lastOpenedMs': lastOpenedMs,
-      };
+    'id': id,
+    'title': title,
+    'filePath': filePath,
+    'sourceType': sourceType,
+    'lastChunkIndex': lastChunkIndex,
+    'totalChunks': totalChunks,
+    'lastOpenedMs': lastOpenedMs,
+  };
 
   factory LibraryEntry.fromJson(Map<String, dynamic> json) => LibraryEntry(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        filePath: json['filePath'] as String,
-        sourceType: json['sourceType'] as String,
-        lastChunkIndex: (json['lastChunkIndex'] as num).toInt(),
-        totalChunks: (json['totalChunks'] as num).toInt(),
-        lastOpenedMs: (json['lastOpenedMs'] as num).toInt(),
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    filePath: json['filePath'] as String,
+    sourceType: json['sourceType'] as String,
+    lastChunkIndex: (json['lastChunkIndex'] as num).toInt(),
+    totalChunks: (json['totalChunks'] as num).toInt(),
+    lastOpenedMs: (json['lastOpenedMs'] as num).toInt(),
+  );
 }

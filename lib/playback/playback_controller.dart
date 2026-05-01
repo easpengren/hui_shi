@@ -41,9 +41,11 @@ class PlaybackController {
   int get currentIndex => _currentIndex;
   int get totalChunks => _chunks.length;
 
-  PlaybackController({required PiperTtsClient piper, required SystemTtsClient system})
-      : _piper = piper,
-        _system = system;
+  PlaybackController({
+    required PiperTtsClient piper,
+    required SystemTtsClient system,
+  }) : _piper = piper,
+       _system = system;
 
   void setEngine(TtsEngine engine) => _engine = engine;
 
@@ -53,7 +55,11 @@ class PlaybackController {
     _player.setSpeed(speed);
   }
 
-  Future<void> load(String bookId, List<String> chunks, {int startIndex = 0}) async {
+  Future<void> load(
+    String bookId,
+    List<String> chunks, {
+    int startIndex = 0,
+  }) async {
     await stop();
     _bookId = bookId;
     _chunks = chunks;
