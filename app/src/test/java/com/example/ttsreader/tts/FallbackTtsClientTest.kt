@@ -2,15 +2,13 @@ package com.example.ttsreader.tts
 
 import com.example.ttsreader.core.Chunk
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
 class FallbackTtsClientTest {
-
-    private val dummyFile = File.createTempFile("tts_test", ".mp3").also { it.deleteOnExit() }
 
     private fun chunk(index: Int = 0) = Chunk(
         index = index,
@@ -20,102 +18,84 @@ class FallbackTtsClientTest {
         endOffset = 5
     )
 
-    private fun successClient(file: File = dummyFile): TtsClient = object : TtsClient {
-        override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = file
-    }
-
-    private fun failingClient(message: String = "boom"): TtsClient = object : TtsClient {
-        override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = error(message)
-    }
-
-    // ── primary success ──────────────────────────────────────────────────────
-
     @Test
     fun primarySuccess_returnsPrimaryFile() = runBlocking {
-        val expected = dummyFile
-        val client = FallbackTtsClient(primary = successClient(expected), fallback = failingClient())
+        val primaryFile = File.createTempFile("primary", ".wav").also { it.deleteOnExit() }
+        val primary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = primaryFile
+        }
+        val secondary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File =
+                error("secondary should not be called")
+        }
+
+        val client = FallbackTtsClient(primary = primary, secondary = secondary)
         val result = client.synthesizeChunk("book", chunk())
-        assertSame(expected, result)
+        assertSame(primaryFile, result)
     }
 
     @Test
-    fun primarySuccess_doesNotInvokeFailureCallback() = runBlocking {
-        var callbackInvoked = false
-        val client = FallbackTtsClient(
-            primary = successClient(),
-            fallback = failingClient(),
-            onPrimaryFailure = { callbackInvoked = true }
-        )
-        client.synthesizeChunk("book", chunk())
-        assertTrue(!callbackInvoked)
-    }
+    fun primaryFailure_usesSecondary() = runBlocking {
+        val secondaryFile = File.createTempFile("secondary", ".wav").also { it.deleteOnExit() }
+        val primary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File =
+                throw IllegalStateException("boom")
+        }
+        val secondary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = secondaryFile
+        }
 
-    // ── primary failure → fallback ───────────────────────────────────────────
-
-    @Test
-    fun primaryFails_fallbackResultReturned() = runBlocking {
-        val fallbackFile = File.createTempFile("fallback", ".mp3").also { it.deleteOnExit() }
-        val client = FallbackTtsClient(primary = failingClient(), fallback = successClient(fallbackFile))
+        val client = FallbackTtsClient(primary = primary, secondary = secondary)
         val result = client.synthesizeChunk("book", chunk())
-        assertSame(fallbackFile, result)
+        assertSame(secondaryFile, result)
     }
 
     @Test
-    fun primaryFails_callbackInvokedWithThrowable() = runBlocking {
-        var captured: Throwable? = null
-        val client = FallbackTtsClient(
-            primary = failingClient("server down"),
-            fallback = successClient(),
-            onPrimaryFailure = { captured = it }
-        )
-        client.synthesizeChunk("book", chunk())
-        assertEquals("server down", captured?.message)
+    fun bothFail_rethrowsSecondaryFailure() = runBlocking {
+        val primary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File =
+                throw IllegalStateException("primary failed")
+        }
+        val secondary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File =
+                throw IllegalStateException("secondary failed")
+        }
+
+        val client = FallbackTtsClient(primary = primary, secondary = secondary)
+        var threw = false
+        try {
+            client.synthesizeChunk("book", chunk())
+        } catch (e: IllegalStateException) {
+            threw = true
+            assertTrue(e.message?.contains("secondary failed") == true)
+        }
+        assertTrue(threw)
     }
 
     @Test
-    fun noCallback_primaryFails_stillFallsBack() = runBlocking {
-        val fallbackFile = File.createTempFile("fallback2", ".mp3").also { it.deleteOnExit() }
-        val client = FallbackTtsClient(
-            primary = failingClient(),
-            fallback = successClient(fallbackFile),
-            onPrimaryFailure = null
-        )
-        val result = client.synthesizeChunk("book", chunk())
-        assertSame(fallbackFile, result)
-    }
-
-    // ── release ──────────────────────────────────────────────────────────────
-
-    @Test
-    fun release_callsBothClients() = runBlocking {
+    fun release_noopDoesNotReleaseChildren() {
         var primaryReleased = false
-        var fallbackReleased = false
-        val primary = object : TtsClient {
-            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = dummyFile
-            override fun release() { primaryReleased = true }
-        }
-        val fallback = object : TtsClient {
-            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = dummyFile
-            override fun release() { fallbackReleased = true }
-        }
-        FallbackTtsClient(primary, fallback).release()
-        assertTrue(primaryReleased)
-        assertTrue(fallbackReleased)
-    }
+        var secondaryReleased = false
 
-    // ── multiple chunks ──────────────────────────────────────────────────────
-
-    @Test
-    fun multipleChunks_eachReturnedCorrectly() = runBlocking {
-        val files = (0..4).map { File.createTempFile("chunk$it", ".mp3").also { f -> f.deleteOnExit() } }
-        var call = 0
         val primary = object : TtsClient {
-            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File = files[call++]
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File =
+                File.createTempFile("p", ".wav")
+
+            override fun release() {
+                primaryReleased = true
+            }
         }
-        val client = FallbackTtsClient(primary = primary, fallback = failingClient())
-        (0..4).forEach { i ->
-            val result = client.synthesizeChunk("book", chunk(i))
-            assertSame(files[i], result)
+        val secondary = object : TtsClient {
+            override suspend fun synthesizeChunk(bookId: String, chunk: Chunk): File =
+                File.createTempFile("s", ".wav")
+
+            override fun release() {
+                secondaryReleased = true
+            }
         }
+
+        FallbackTtsClient(primary = primary, secondary = secondary).release()
+        assertFalse(primaryReleased)
+        assertFalse(secondaryReleased)
     }
 }

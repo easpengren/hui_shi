@@ -39,10 +39,10 @@ class Chunker {
     private fun chooseBoundary(text: String, start: Int, end: Int): Int {
         if (end == text.length) return end
         val sentenceBoundary = text.lastIndexOfAny(charArrayOf('.', '!', '?', '\n'), end, ignoreCase = false)
-        if (sentenceBoundary in (start + 200) until end) return sentenceBoundary + 1
+        if (sentenceBoundary in (start + 80) until end) return sentenceBoundary + 1
 
         val wordBoundary = text.lastIndexOf(' ', end)
-        if (wordBoundary in (start + 200) until end) return wordBoundary + 1
+        if (wordBoundary in (start + 80) until end) return wordBoundary + 1
 
         return end
     }

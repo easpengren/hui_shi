@@ -7,5 +7,7 @@ data class ImportedDocument(
     val title: String,
     val sourceType: SourceType,
     val pages: List<Page>,
-    val previewText: String
+    val previewText: String,
+    val sourceUri: String? = null,
+    val sourceDisplayName: String? = null
 )

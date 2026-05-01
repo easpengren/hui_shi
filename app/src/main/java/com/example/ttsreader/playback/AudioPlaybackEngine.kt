@@ -12,7 +12,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.example.ttsreader.data.ChunkEntity
 import java.io.File
 
-class AudioPlaybackEngine(context: Context) {
+class AudioPlaybackEngine(context: Context) : PlaybackEngine {
 
     private val appContext = context.applicationContext
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -23,9 +23,9 @@ class AudioPlaybackEngine(context: Context) {
     private var onChunkChangedCallback: ((ChunkEntity) -> Unit)? = null
 
     /** Called when another app steals audio focus (e.g. the assistant app). */
-    var onFocusLost: (() -> Unit)? = null
+    override var onFocusLost: (() -> Unit)? = null
     /** Called when focus is regained after a transient loss. */
-    var onFocusGained: (() -> Unit)? = null
+    override var onFocusGained: (() -> Unit)? = null
 
     private var wasPlayingBeforeLoss = false
 
@@ -65,7 +65,7 @@ class AudioPlaybackEngine(context: Context) {
         .setOnAudioFocusChangeListener(focusListener)
         .build()
 
-    fun load(chunks: List<ChunkEntity>, onChunkChanged: (ChunkEntity) -> Unit) {
+    override fun load(chunks: List<ChunkEntity>, onChunkChanged: (ChunkEntity) -> Unit) {
         loadedChunks = chunks.toMutableList()
         onChunkChangedCallback = onChunkChanged
         val items = loadedChunks.map { chunk ->
@@ -87,44 +87,55 @@ class AudioPlaybackEngine(context: Context) {
         }
     }
 
-    fun play() {
+    override fun play(): PlaybackStartResult {
         val result = audioManager.requestAudioFocus(focusRequest)
-        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            player.play()
+        return when (result) {
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
+                wasPlayingBeforeLoss = false
+                player.play()
+                PlaybackStartResult.GRANTED
+            }
+            AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
+                wasPlayingBeforeLoss = true
+                PlaybackStartResult.DELAYED
+            }
+            else -> {
+                wasPlayingBeforeLoss = false
+                PlaybackStartResult.FAILED
+            }
         }
-        // AUDIOFOCUS_REQUEST_DELAYED: play() will be triggered via focusListener AUDIOFOCUS_GAIN
     }
 
-    fun appendChunk(chunk: ChunkEntity) {
+    override fun appendChunk(chunk: ChunkEntity) {
         if (loadedChunks.any { it.chunkIndex == chunk.chunkIndex }) return
         loadedChunks.add(chunk)
         loadedChunks.sortBy { it.chunkIndex }
         player.addMediaItem(MediaItem.fromUri(Uri.fromFile(File(chunk.audioPath))))
     }
 
-    fun pause() {
+    override fun pause() {
         wasPlayingBeforeLoss = false
         player.pause()
         audioManager.abandonAudioFocusRequest(focusRequest)
     }
 
-    fun seekToChunk(index: Int) {
+    override fun seekToChunk(index: Int) {
         player.seekTo(index, 0L)
     }
 
-    fun setSpeed(speed: Float) {
+    override fun setSpeed(speed: Float) {
         player.setPlaybackSpeed(speed)
     }
 
-    fun currentChunkIndex(): Int = player.currentMediaItemIndex.coerceAtLeast(0)
+    override fun currentChunkIndex(): Int = player.currentMediaItemIndex.coerceAtLeast(0)
 
-    fun currentPositionMs(): Long = player.currentPosition.coerceAtLeast(0L)
+    override fun currentPositionMs(): Long = player.currentPosition.coerceAtLeast(0L)
 
-    fun durationMs(): Long = player.duration.takeIf { it > 0 } ?: 0L
+    override fun durationMs(): Long = player.duration.takeIf { it > 0 } ?: 0L
 
-    fun isPlaying(): Boolean = player.isPlaying
+    override fun isPlaying(): Boolean = player.isPlaying
 
-    fun release() {
+    override fun release() {
         wasPlayingBeforeLoss = false
         audioManager.abandonAudioFocusRequest(focusRequest)
         player.release()

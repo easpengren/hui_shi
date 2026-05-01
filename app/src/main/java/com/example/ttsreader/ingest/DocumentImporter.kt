@@ -20,11 +20,21 @@ class DocumentImporter(
 
         when {
             mimeType == "application/pdf" || extension == "pdf" -> {
-                pdfExtractor.extract(context, uri, displayName)
+                withContext(Dispatchers.Default) {
+                    pdfExtractor.extract(context, uri, displayName).copy(
+                        sourceUri = uri.toString(),
+                        sourceDisplayName = displayName
+                    )
+                }
             }
 
             mimeType == "application/epub+zip" || extension == "epub" -> {
-                epubExtractor.extract(context, uri, displayName)
+                withContext(Dispatchers.Default) {
+                    epubExtractor.extract(context, uri, displayName).copy(
+                        sourceUri = uri.toString(),
+                        sourceDisplayName = displayName
+                    )
+                }
             }
 
             else -> importPlainText(uri, displayName)
@@ -41,7 +51,9 @@ class DocumentImporter(
             title = displayName.substringBeforeLast('.'),
             sourceType = SourceType.PLAIN_TEXT,
             pages = pages,
-            previewText = text
+            previewText = text,
+            sourceUri = uri.toString(),
+            sourceDisplayName = displayName
         )
     }
 

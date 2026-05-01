@@ -12,7 +12,13 @@ data class BookEntity(
     val title: String,
     val sourceType: SourceType,
     val cleanedText: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val sourceUri: String? = null,
+    val sourceDisplayName: String? = null,
+    val lastCharOffset: Int = 0,
+    val lastPageIndex: Int = 0,
+    val lastPlayedAt: Long = 0L,
+    val lastOpenedAt: Long = 0L
 )
 
 @Entity(

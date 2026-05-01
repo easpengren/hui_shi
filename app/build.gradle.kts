@@ -4,24 +4,7 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val kokoroTtsEngine = (project.findProperty("KOKORO_TTS_ENGINE") as String?)
-    ?: System.getenv("KOKORO_TTS_ENGINE")
-    ?: ""
-val rawKokoroApiBaseUrl = (project.findProperty("KOKORO_API_BASE_URL") as String?)
-    ?: (project.findProperty("KOKORO_API_URL") as String?)
-    ?: (project.findProperty("TTS_API_BASE_URL") as String?)
-    ?: (project.findProperty("TTS_API_URL") as String?)
-    ?: System.getenv("KOKORO_API_BASE_URL")
-    ?: System.getenv("KOKORO_API_URL")
-    ?: System.getenv("TTS_API_BASE_URL")
-    ?: System.getenv("TTS_API_URL")
-    ?: "https://api.tts.ai/"
-val kokoroApiBaseUrl = if (rawKokoroApiBaseUrl.endsWith("/")) rawKokoroApiBaseUrl else "$rawKokoroApiBaseUrl/"
-val kokoroApiKey = (project.findProperty("KOKORO_API_KEY") as String?)
-    ?: (project.findProperty("TTS_API_KEY") as String?)
-    ?: System.getenv("KOKORO_API_KEY")
-    ?: System.getenv("TTS_API_KEY")
-    ?: ""
+
 
 android {
     namespace = "com.example.ttsreader"
@@ -39,9 +22,7 @@ android {
             useSupportLibrary = true
         }
 
-        buildConfigField("String", "KOKORO_TTS_ENGINE", "\"$kokoroTtsEngine\"")
-        buildConfigField("String", "KOKORO_API_BASE_URL", "\"$kokoroApiBaseUrl\"")
-        buildConfigField("String", "KOKORO_API_KEY", "\"$kokoroApiKey\"")
+
     }
 
     buildTypes {
@@ -102,7 +83,8 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(project(":sherpa_onnx"))
+
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("com.positiondev.epublib:epublib-core:3.1") {
         exclude(group = "xmlpull", module = "xmlpull")

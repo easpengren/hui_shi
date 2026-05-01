@@ -10,15 +10,17 @@ class SmartPunctuationNormalizerTest {
     private val normalizer = SmartPunctuationNormalizer()
 
     @Test
-    fun normalize_addsPauseAfterPeriod() {
+    fun normalize_periodDoesNotInjectSsmlBreak() {
         val result = normalizer.normalize("Hello.")
-        assertTrue(result.contains(".<break time=\"300ms\"/>"))
+        assertFalse(result.contains("<break"))
+        assertEquals("Hello.", result)
     }
 
     @Test
-    fun normalize_addsPauseAfterComma() {
+    fun normalize_commaDoesNotInjectSsmlBreak() {
         val result = normalizer.normalize("One, two")
-        assertTrue(result.contains(",<break time=\"150ms\"/>"))
+        assertFalse(result.contains("<break"))
+        assertEquals("One, two", result)
     }
 
     @Test

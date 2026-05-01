@@ -10,6 +10,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.tom_roush.pdfbox.text.TextPosition
+import java.io.File
 import kotlin.math.abs
 
 class PdfExtractor(context: Context) {
@@ -18,19 +19,46 @@ class PdfExtractor(context: Context) {
     }
 
     fun extract(context: Context, uri: Uri, displayName: String): ImportedDocument {
-        val input = context.contentResolver.openInputStream(uri) ?: error("Could not open PDF")
-        input.use { stream ->
-            PDDocument.load(stream).use { document ->
+        val tempPdf = File.createTempFile("import_", ".pdf", context.cacheDir)
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempPdf.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("Could not open PDF")
+
+            PDDocument.load(tempPdf).use { document ->
                 val stripper = PositionedPdfStripper()
                 stripper.getText(document)
                 val pages = stripper.buildPages()
+                val previewText = buildPreviewText(pages)
                 return ImportedDocument(
                     title = displayName.substringBeforeLast('.'),
                     sourceType = SourceType.PDF,
                     pages = pages,
-                    previewText = pages.joinToString("\n\n") { it.lines.joinToString("\n") }
+                    previewText = previewText
                 )
             }
+        } finally {
+            tempPdf.delete()
+        }
+    }
+
+    private fun buildPreviewText(pages: List<Page>): String {
+        val maxPreviewPages = 6
+        val maxPreviewChars = 60_000
+        val builder = StringBuilder()
+        for ((pageIdx, page) in pages.take(maxPreviewPages).withIndex()) {
+            if (builder.length >= maxPreviewChars) break
+            if (pageIdx > 0) builder.append("\n\n")
+            for (line in page.lines) {
+                if (builder.length >= maxPreviewChars) break
+                if (builder.isNotEmpty() && builder.last() != '\n') builder.append('\n')
+                builder.append(line)
+            }
+        }
+        return if (builder.length > maxPreviewChars) {
+            builder.substring(0, maxPreviewChars)
+        } else {
+            builder.toString()
         }
     }
 

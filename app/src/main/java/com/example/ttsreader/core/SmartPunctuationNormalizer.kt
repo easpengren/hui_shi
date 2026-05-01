@@ -18,9 +18,6 @@ class SmartPunctuationNormalizer {
             match.value.dropLast(1)
         }
 
-        updated = updated.replace(".", ".<break time=\"300ms\"/>")
-        updated = updated.replace(",", ",<break time=\"150ms\"/>")
-
         return updated
     }
 }

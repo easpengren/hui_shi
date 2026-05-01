@@ -9,13 +9,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -24,20 +21,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.example.ttsreader.ingest.DocumentImporter
+import com.example.ttsreader.ui.LibraryScreen
 import com.example.ttsreader.ui.ReaderScreen
 import com.example.ttsreader.ui.ReaderViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private enum class AppScreen { READER, LIBRARY }
+
     private val viewModel by viewModels<ReaderViewModel>()
     private lateinit var documentImporter: DocumentImporter
 
     private val openDocumentLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             lifecycleScope.launch {
-                viewModel.importDocument(documentImporter.import(uri))
+                runCatching {
+                    documentImporter.import(uri)
+                }.onSuccess { doc ->
+                    viewModel.importDocument(doc)
+                }.onFailure { err ->
+                    viewModel.setStatus("Import failed: ${err.message ?: err::class.java.simpleName}")
+                }
             }
         }
     }
@@ -50,6 +62,8 @@ class MainActivity : ComponentActivity() {
         importSharedDocument(intent)
 
         setContent {
+            var currentScreen by rememberSaveable { mutableStateOf(AppScreen.READER) }
+
             MaterialTheme {
                 Surface {
                     Column(
@@ -58,14 +72,27 @@ class MainActivity : ComponentActivity() {
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { openDocumentLauncher.launch("*/*") }
-                        ) {
-                            Text("Upload File")
-                        }
+                        when (currentScreen) {
+                            AppScreen.READER -> ReaderScreen(
+                                viewModel = viewModel,
+                                incomingSharedText = sharedText,
+                                onOpenLibrary = { currentScreen = AppScreen.LIBRARY },
+                                onUploadFile = {
+                                    openDocumentLauncher.launch(
+                                        arrayOf("application/pdf", "application/epub+zip", "text/plain", "*/*")
+                                    )
+                                }
+                            )
 
-                        ReaderScreen(viewModel = viewModel, incomingSharedText = sharedText)
+                            AppScreen.LIBRARY -> LibraryScreen(
+                                viewModel = viewModel,
+                                onBackToReader = { currentScreen = AppScreen.READER },
+                                onOpenBook = { bookId ->
+                                    viewModel.openLibraryBook(bookId)
+                                    currentScreen = AppScreen.READER
+                                }
+                            )
+                        }
                     }
                 }
             }

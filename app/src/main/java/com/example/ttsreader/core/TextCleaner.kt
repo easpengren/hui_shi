@@ -2,6 +2,8 @@ package com.example.ttsreader.core
 
 class TextCleaner {
     private val superscriptRegex = Regex("[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾]+")
+    // Matches lines that are overwhelmingly non-word characters (PDF extraction noise)
+    private val noisyLineRegex = Regex("^[^a-zA-Z]{0,6}$")
     private val inlineFootnoteRegex = Regex("(?<=\\w)(\\[\\d+\\]|\\(\\d+\\)|\\*+|†+)")
     private val footnoteLineRegex = Regex("^\\s*\\d+\\s+.+$", RegexOption.MULTILINE)
 
@@ -27,12 +29,38 @@ class TextCleaner {
     }
 
     fun cleanInline(text: String): String {
-        return text
+        val lines = text.split("\n")
+        val filtered = lines.filter { line -> !isNoiseLine(line) }
+        return filtered.joinToString("\n")
             .replace(superscriptRegex, "")
             .replace(inlineFootnoteRegex, "")
             .replace(footnoteLineRegex, "")
             .replace(Regex("\\s+"), " ")
             .trim()
+    }
+
+    /**
+     * Returns true if the line is extraction noise: very short with no real words,
+     * or has a word-character ratio below 40% (e.g. "percent rn at BW percent five").
+     */
+    private fun isNoiseLine(line: String): Boolean {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) return false
+        // Very short lines with no letters at all
+        if (noisyLineRegex.matches(trimmed)) return true
+        // Lines where fewer than 40% of characters are letters or spaces
+        val wordChars = trimmed.count { it.isLetter() || it == ' ' }
+        val ratio = wordChars.toFloat() / trimmed.length
+        if (ratio < 0.40f && trimmed.length > 8) return true
+        // Lines that are mostly isolated single-letter tokens with symbols between them
+        val tokens = trimmed.split(Regex("\\s+"))
+        if (tokens.size >= 4) {
+            val shortNoisyTokens = tokens.count { tok ->
+                tok.length <= 3 && tok.any { !it.isLetter() }
+            }
+            if (shortNoisyTokens.toFloat() / tokens.size > 0.60f) return true
+        }
+        return false
     }
 
     private fun normalizeLine(line: String): String {
