@@ -175,6 +175,11 @@ class ReaderScreen extends StatelessWidget {
               onPressed: () => Navigator.pushNamed(context, '/library'),
             ),
             IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Settings',
+              onPressed: () => Navigator.pushNamed(context, '/settings'),
+            ),
+            IconButton(
               icon: const Icon(Icons.folder_open),
               tooltip: 'Open file',
               onPressed: state.loadState == LoadState.loading
@@ -200,7 +205,6 @@ class ReaderScreen extends StatelessWidget {
                 child: _ContentArea(state: state),
               ),
             ),
-            _TtsControls(state: state),
             _PlaybackBar(state: state),
           ],
         ),
@@ -244,16 +248,16 @@ class _ContentAreaState extends State<_ContentArea> {
     if (_keys.length > needed) _keys.removeRange(needed, _keys.length);
   }
 
-  void _maybeScrollToCurrent() {
+  void _maybeScrollToCurrent({bool force = false}) {
     final idx = widget.state.currentChunkIndex;
-    if (idx == _lastScrolledIndex) return;
+    if (!force && idx == _lastScrolledIndex) return;
     if (_keys.isEmpty || idx >= _keys.length) return;
-    _lastScrolledIndex = idx;
     // Schedule after the frame so the item is laid out.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final key = _keys[idx];
       final ctx = key.currentContext;
       if (ctx != null) {
+        _lastScrolledIndex = idx;
         Scrollable.ensureVisible(
           ctx,
           duration: const Duration(milliseconds: 300),
@@ -262,6 +266,33 @@ class _ContentAreaState extends State<_ContentArea> {
         );
       }
     });
+  }
+
+  Future<void> _jumpToCurrent() async {
+    final idx = widget.state.currentChunkIndex;
+    if (_keys.isEmpty || idx >= _keys.length) return;
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      _maybeScrollToCurrent(force: true);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      if (_keys[idx].currentContext != null) return;
+      if (!_scroll.hasClients) return;
+
+      final max = _scroll.position.maxScrollExtent;
+      final fraction = widget.state.chunks.length <= 1
+          ? 0.0
+          : idx / (widget.state.chunks.length - 1);
+      final target = (max * fraction).clamp(0.0, max);
+
+      await _scroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    _maybeScrollToCurrent(force: true);
   }
 
   @override
@@ -319,53 +350,85 @@ class _ContentAreaState extends State<_ContentArea> {
     _syncKeys();
     _maybeScrollToCurrent();
 
-    return DossierPanel(
-      padding: const EdgeInsets.all(10),
-      child: ListView.builder(
-        controller: _scroll,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        itemCount: state.chunks.length,
-        itemBuilder: (context, index) {
-          final isCurrent = index == state.currentChunkIndex;
-          return GestureDetector(
-            key: _keys[index],
-            onTap: () => state.seekAndPlay(index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isCurrent
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.25)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 10, bottom: 4),
+            child: FilledButton.icon(
+              icon: const Icon(Icons.my_location, size: 16),
+              label: const Text('Current'),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
-              child: Text(
-                state.chunks[index],
-                style: TextStyle(
-                  fontSize: 17,
-                  height: 1.6,
-                  color: isCurrent
-                      ? Theme.of(context).colorScheme.onSurface
-                      : null,
-                ),
-              ),
+              onPressed: _jumpToCurrent,
             ),
-          );
-        },
-      ),
+          ),
+        ),
+        Expanded(
+          child: DossierPanel(
+            padding: const EdgeInsets.all(10),
+            child: ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              itemCount: state.chunks.length,
+              itemBuilder: (context, index) {
+                final isCurrent = index == state.currentChunkIndex;
+                return GestureDetector(
+                  key: _keys[index],
+                  onTap: () => state.seekAndPlay(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isCurrent
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.secondary.withValues(alpha: 0.25)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      state.chunks[index],
+                      style: TextStyle(
+                        fontSize: 17,
+                        height: 1.6,
+                        color: isCurrent
+                            ? Theme.of(context).colorScheme.onSurface
+                            : null,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _TtsControls extends StatelessWidget {
+class _TtsControls extends StatefulWidget {
   final ReaderState state;
   const _TtsControls({required this.state});
 
   @override
+  State<_TtsControls> createState() => _TtsControlsState();
+}
+
+class _TtsControlsState extends State<_TtsControls> {
+  double? _draftSpeed;
+
+  @override
   Widget build(BuildContext context) {
+    final state = widget.state;
+    final sliderSpeed = _draftSpeed ?? state.playbackSpeed;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
       child: DossierPanel(
@@ -404,7 +467,7 @@ class _TtsControls extends StatelessWidget {
             if (state.selectedEngine == TtsEngine.system &&
                 state.systemVoices.isNotEmpty) ...[
               DropdownButtonFormField<String>(
-                initialValue: state.selectedSystemVoiceName.isNotEmpty
+                value: state.selectedSystemVoiceName.isNotEmpty
                     ? '${state.selectedSystemVoiceLocale}\u0001${state.selectedSystemVoiceName}'
                     : 'default',
                 decoration: const InputDecoration(
@@ -448,12 +511,20 @@ class _TtsControls extends StatelessWidget {
                     min: 0.1,
                     max: 2.0,
                     divisions: 19,
-                    value: state.playbackSpeed,
-                    label: '${state.playbackSpeed.toStringAsFixed(1)}×',
-                    onChanged: state.setSpeed,
+                    value: sliderSpeed,
+                    label: '${sliderSpeed.toStringAsFixed(1)}×',
+                    onChanged: (v) {
+                      setState(() => _draftSpeed = v);
+                    },
+                    onChangeEnd: (v) async {
+                      await state.setSpeed(v);
+                      if (mounted) {
+                        setState(() => _draftSpeed = null);
+                      }
+                    },
                   ),
                 ),
-                Text('${state.playbackSpeed.toStringAsFixed(1)}×'),
+                Text('${sliderSpeed.toStringAsFixed(1)}×'),
               ],
             ),
           ],
@@ -473,7 +544,7 @@ class _PiperVoiceRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          initialValue: state.selectedVoice,
+          value: state.selectedVoice,
           decoration: const InputDecoration(
             labelText: 'Voice',
             isDense: true,
@@ -518,14 +589,33 @@ class _PiperVoiceRow extends StatelessWidget {
                   ],
                 )
         else
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 16),
-              const SizedBox(width: 4),
-              Text(
-                'Model ready',
-                style: Theme.of(context).textTheme.labelSmall,
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Model ready',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: state.downloadPiperModel,
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Re-download'),
+                  ),
+                ],
               ),
+              if (state.downloadStatus.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    state.downloadStatus,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
             ],
           ),
       ],
@@ -542,7 +632,7 @@ class _PlaybackBar extends StatelessWidget {
     final isPlaying = state.playbackStatus == PlaybackStatus.playing;
     final isPaused = state.playbackStatus == PlaybackStatus.paused;
     final isLoading = state.playbackStatus == PlaybackStatus.loading;
-    final canPlay = state.chunks.isNotEmpty && !isLoading;
+    final canPlay = state.chunks.isNotEmpty;
 
     return SafeArea(
       top: false,
@@ -573,12 +663,11 @@ class _PlaybackBar extends StatelessWidget {
             ),
             // Play / Pause
             isLoading
-                ? const SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                ? IconButton(
+                    iconSize: 40,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    tooltip: 'Stop loading',
+                    onPressed: state.stop,
                   )
                 : IconButton(
                     iconSize: 40,

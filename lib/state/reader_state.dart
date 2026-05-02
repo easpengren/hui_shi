@@ -50,6 +50,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
 
   StreamSubscription<PlaybackStatus>? _statusSub;
   StreamSubscription<ChunkEvent>? _chunkSub;
+  StreamSubscription<String>? _errorSub;
 
   ReaderState() {
     WidgetsBinding.instance.addObserver(this);
@@ -101,6 +102,10 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     _chunkSub = _playback.chunkStream.listen((e) {
       currentChunkIndex = e.index;
       _saveProgress();
+      notifyListeners();
+    });
+    _errorSub = _playback.errorStream.listen((message) {
+      downloadStatus = message;
       notifyListeners();
     });
 
@@ -384,6 +389,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> pause() => _playback.pause();
   Future<void> resume() => _playback.resume();
+  Future<void> stop() => _playback.stop();
   Future<void> seekToChunk(int index) => _playback.seekToChunk(index);
 
   /// Seek to [index] and immediately start playing from there.
@@ -393,24 +399,145 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadSystemVoices() async {
-    systemVoices = (await _system.getVoices())
+    final allAvailable = (await _system.getVoices())
         .where((v) => (v['notInstalled'] ?? 'false') != 'true')
         .toList();
-    systemVoices.sort((a, b) {
+
+    final preferredAllLocales = allAvailable
+        .where((v) => _isPreferredSystemVoice(v['name'] ?? ''))
+        .toList();
+    final preferredEnglish = preferredAllLocales
+        .where((v) => (v['locale'] ?? '').toLowerCase().startsWith('en'))
+        .toList();
+    final fallbackEnglish = allAvailable
+        .where((v) => (v['locale'] ?? '').toLowerCase().startsWith('en'))
+        .toList();
+
+    List<Map<String, String>> shortlist;
+    if (preferredEnglish.isNotEmpty) {
+      shortlist = preferredEnglish;
+    } else if (preferredAllLocales.isNotEmpty) {
+      shortlist = preferredAllLocales;
+    } else if (fallbackEnglish.isNotEmpty) {
+      shortlist = fallbackEnglish;
+    } else {
+      shortlist = allAvailable;
+    }
+
+    shortlist.sort((a, b) {
       final aKey = '${a['locale'] ?? ''} ${a['name'] ?? ''}';
       final bKey = '${b['locale'] ?? ''} ${b['name'] ?? ''}';
       return aKey.compareTo(bKey);
     });
+
+    systemVoices = shortlist;
     systemVoiceOptions = [
       {'id': 'default', 'label': 'Use Android default'},
       ...systemVoices.map(
         (v) => {
           'id': '${v['locale'] ?? ''}\u0001${v['name'] ?? ''}',
-          'label': '${v['locale'] ?? 'unknown'} - ${v['name'] ?? 'Unnamed'}',
+          'label': '${_isPreferredSystemVoice(v['name'] ?? '') ? '★ ' : ''}${_humanizeVoiceName(v['name'] ?? 'Unnamed', v['locale'] ?? '')}',
+          'name': v['name'] ?? '',
         },
       ),
     ];
+
+    final selectedStillPresent = systemVoices.any(
+      (v) =>
+          (v['name'] ?? '') == selectedSystemVoiceName &&
+          (v['locale'] ?? '') == selectedSystemVoiceLocale,
+    );
+    if (!selectedStillPresent) {
+      selectedSystemVoiceName = '';
+      selectedSystemVoiceLocale = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('systemVoiceName');
+      await prefs.remove('systemVoiceLocale');
+      await _system.setDefaultVoice();
+    }
+
+    if (selectedSystemVoiceName.isEmpty && systemVoices.isNotEmpty) {
+      final best = systemVoices.first;
+      selectedSystemVoiceName = best['name'] ?? '';
+      selectedSystemVoiceLocale = best['locale'] ?? '';
+      if (selectedSystemVoiceName.isNotEmpty) {
+        await _system.setVoice(selectedSystemVoiceName, selectedSystemVoiceLocale);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('systemVoiceName', selectedSystemVoiceName);
+        await prefs.setString('systemVoiceLocale', selectedSystemVoiceLocale);
+      }
+    }
+
     notifyListeners();
+  }
+
+  /// Converts raw Android TTS voice names into human-readable labels.
+  /// Examples:
+  ///   en-US-Neural2-A        → "Neural2 A (en-US)"
+  ///   en-us-x-iob-network    → "IOB (en-US) · Online"
+  ///   en-us-x-sfg-local      → "SFG (en-US) · Offline"
+  String _humanizeVoiceName(String name, String locale) {
+    return _doHumanize(name, locale);
+  }
+
+  String _doHumanize(String name, String locale) {
+    // Google Cloud TTS pattern: *-Neural2-A, *-WaveNet-A, *-Studio-M, etc.
+    final cloudRe = RegExp(
+      r'(neural2|wavenet|studio|journey|standard|news|casual)-([a-z0-9]+)$',
+      caseSensitive: false,
+    );
+    final cloudMatch = cloudRe.firstMatch(name);
+    if (cloudMatch != null) {
+      final tier = _capitalizeTier(cloudMatch.group(1)!);
+      final voiceId = cloudMatch.group(2)!.toUpperCase();
+      return '$tier $voiceId (${_shortLocale(locale)})';
+    }
+
+    // Android opaque pattern: en-us-x-iob-network / en-us-x-sfg-local
+    final opaqueRe = RegExp(
+      r'x-([a-z0-9]{2,6})-(local|network)$',
+      caseSensitive: false,
+    );
+    final opaqueMatch = opaqueRe.firstMatch(name.toLowerCase());
+    if (opaqueMatch != null) {
+      final code = opaqueMatch.group(1)!.toUpperCase();
+      final online = opaqueMatch.group(2) == 'network';
+      return '$code (${_shortLocale(locale)}) · ${online ? 'Online' : 'Offline'}';
+    }
+
+    // Fallback: just clean up with short locale prefix
+    return '${_shortLocale(locale)} – $name';
+  }
+
+  String _capitalizeTier(String tier) {
+    const map = {
+      'neural2': 'Neural2',
+      'wavenet': 'WaveNet',
+      'studio': 'Studio',
+      'journey': 'Journey',
+      'standard': 'Standard',
+      'news': 'News',
+      'casual': 'Casual',
+    };
+    return map[tier.toLowerCase()] ?? (tier[0].toUpperCase() + tier.substring(1));
+  }
+
+  String _shortLocale(String locale) {
+    final parts = locale.replaceAll('_', '-').split('-');
+    if (parts.length >= 2) {
+      return '${parts[0].toLowerCase()}-${parts[1].toUpperCase()}';
+    }
+    return locale;
+  }
+
+  bool _isPreferredSystemVoice(String name) {
+    final n = name.toLowerCase();
+    return n.contains('neural') ||
+        n.contains('wavenet') ||
+        n.contains('studio') ||
+        n.contains('journey') ||
+        n.contains('premium') ||
+        n.contains('high');
   }
 
   Future<void> setSystemVoice(String name, String locale) async {
@@ -431,8 +558,25 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setEngine(TtsEngine engine) async {
+    if (selectedEngine == engine) return;
+
+    // Ensure we fully leave the previous engine before switching. Without this,
+    // the old engine can keep speaking and make the toggle appear broken.
+    await _playback.stop();
     selectedEngine = engine;
+    piperModelDownloaded = _piper.isModelDownloaded(selectedVoice);
     _playback.setEngine(engine);
+
+    if (engine == TtsEngine.piper && !piperModelDownloaded) {
+      downloadStatus = 'Piper selected. Download the selected Piper voice to play.';
+    } else if (engine == TtsEngine.system) {
+      downloadStatus = selectedSystemVoiceName.isEmpty
+          ? 'System TTS selected (Android default voice).'
+          : 'System TTS selected (${selectedSystemVoiceLocale.isEmpty ? 'voice set' : selectedSystemVoiceLocale}).';
+    } else {
+      downloadStatus = 'Piper selected. Model ready.';
+    }
+
     notifyListeners();
   }
 
@@ -554,6 +698,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _statusSub?.cancel();
     _chunkSub?.cancel();
+    _errorSub?.cancel();
     _playback.dispose();
     super.dispose();
   }

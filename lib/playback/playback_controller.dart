@@ -21,6 +21,7 @@ class PlaybackController {
 
   TtsEngine _engine = TtsEngine.system;
   PlaybackStatus _status = PlaybackStatus.idle;
+  double _uiSpeed = 1.0;
 
   String? _bookId;
   List<String> _chunks = [];
@@ -33,9 +34,11 @@ class PlaybackController {
 
   final _statusCtrl = StreamController<PlaybackStatus>.broadcast();
   final _chunkCtrl = StreamController<ChunkEvent>.broadcast();
+  final _errorCtrl = StreamController<String>.broadcast();
 
   Stream<PlaybackStatus> get statusStream => _statusCtrl.stream;
   Stream<ChunkEvent> get chunkStream => _chunkCtrl.stream;
+  Stream<String> get errorStream => _errorCtrl.stream;
 
   PlaybackStatus get status => _status;
   int get currentIndex => _currentIndex;
@@ -47,12 +50,30 @@ class PlaybackController {
   }) : _piper = piper,
        _system = system;
 
-  void setEngine(TtsEngine engine) => _engine = engine;
+  void setEngine(TtsEngine engine) {
+    _engine = engine;
+    _applyEngineSpeed();
+  }
 
   void setSpeed(double speed) {
-    _piper.setSpeed(speed);
-    _system.setSpeed(speed);
-    _player.setSpeed(speed);
+    _uiSpeed = speed.clamp(0.1, 2.0);
+    _system.setSpeed(_uiSpeed);
+    _applyEngineSpeed();
+  }
+
+  void _applyEngineSpeed() {
+    if (_engine == TtsEngine.piper) {
+      // Piper speed is baked into synthesis. Keep player at 1x to avoid
+      // double-applying speed and causing mismatch vs. system voices.
+      final piperSpeed = (0.45 + (_uiSpeed * 0.9)).clamp(0.35, 2.2);
+      _piper.setSpeed(piperSpeed);
+      _player.setSpeed(1.0);
+      return;
+    }
+
+    // System TTS handles speed directly; keep audio player neutral.
+    _piper.setSpeed(1.0);
+    _player.setSpeed(1.0);
   }
 
   Future<void> load(
@@ -106,27 +127,32 @@ class PlaybackController {
   Future<void> _playPiper() async {
     _setStatus(PlaybackStatus.loading);
 
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.speech());
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.speech());
 
-    _playlist = ConcatenatingAudioSource(children: []);
-    await _player.setAudioSource(_playlist!);
+      _playlist = ConcatenatingAudioSource(children: []);
+      await _player.setAudioSource(_playlist!);
 
-    _playerIndexSub?.cancel();
-    _playerIndexSub = _player.currentIndexStream.listen((idx) {
-      if (idx != null) {
-        _currentIndex = _chunkOffset + idx;
-        _emitChunk(_currentIndex);
-      }
-    });
+      _playerIndexSub?.cancel();
+      _playerIndexSub = _player.currentIndexStream.listen((idx) {
+        if (idx != null) {
+          _currentIndex = _chunkOffset + idx;
+          _emitChunk(_currentIndex);
+        }
+      });
 
-    _playerCompleteSub?.cancel();
-    _playerCompleteSub = _player.playerStateStream
-        .where((s) => s.processingState == ProcessingState.completed)
-        .listen((_) => _setStatus(PlaybackStatus.idle));
+      _playerCompleteSub?.cancel();
+      _playerCompleteSub = _player.playerStateStream
+          .where((s) => s.processingState == ProcessingState.completed)
+          .listen((_) => _setStatus(PlaybackStatus.idle));
 
-    // Synthesize in background; start playback as soon as first chunk lands.
-    _synthesizeAndAppend(_bookId!, _currentIndex).ignore();
+      // Synthesize in background; start playback as soon as first chunk lands.
+      _synthesizeAndAppend(_bookId!, _currentIndex).ignore();
+    } catch (e) {
+      _emitError('Piper playback setup failed: $e');
+      _setStatus(PlaybackStatus.idle);
+    }
   }
 
   int _chunkOffset = 0;
@@ -147,7 +173,12 @@ class PlaybackController {
           await _player.play();
         }
       }
-    } catch (_) {
+      if (!started && !_stopped) {
+        _emitError('Piper failed: no speakable text chunks were generated.');
+        _setStatus(PlaybackStatus.idle);
+      }
+    } catch (e) {
+      _emitError('Piper synthesis failed: $e');
       _setStatus(PlaybackStatus.idle);
     }
   }
@@ -215,6 +246,8 @@ class PlaybackController {
   void _emitChunk(int index) =>
       _chunkCtrl.add(ChunkEvent(index, _chunks.length));
 
+  void _emitError(String message) => _errorCtrl.add(message);
+
   void dispose() {
     stop();
     _playerIndexSub?.cancel();
@@ -224,5 +257,6 @@ class PlaybackController {
     _piper.dispose();
     _statusCtrl.close();
     _chunkCtrl.close();
+    _errorCtrl.close();
   }
 }

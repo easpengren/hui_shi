@@ -17,8 +17,12 @@ class AppTheme {
     brightness: Brightness.light,
     primary: _prussian,
     onPrimary: _paperBright,
+    primaryContainer: _prussian,
+    onPrimaryContainer: _paperBright,
     secondary: _celadon,
     onSecondary: _ink,
+    secondaryContainer: _prussian,
+    onSecondaryContainer: _paperBright,
     error: _errorRed,
     onError: Colors.white,
     surface: _paperBright,
@@ -156,6 +160,21 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
           (s) => s.contains(WidgetState.selected) ? _cinnabar : _paperLine,
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((s) {
+            if (s.contains(WidgetState.selected)) return _prussian;
+            return _paperBright;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((s) {
+            if (s.contains(WidgetState.selected)) return _paperBright;
+            return _ink;
+          }),
+          side: WidgetStateProperty.all(
+            const BorderSide(color: _paperLine),
+          ),
         ),
       ),
       navigationBarTheme: const NavigationBarThemeData(height: 68),

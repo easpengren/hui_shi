@@ -17,6 +17,7 @@ class SystemTtsClient {
   final FlutterTts _tts = FlutterTts();
   bool _initialized = false;
   double _speed = 0.4;
+  Completer<void>? _activeSpeakCompleter;
 
   // FlutterTts speech-rate values are platform-dependent; on Android
   // values around 0.5 can still sound very fast. Map UI speed to a safer range.
@@ -82,12 +83,19 @@ class SystemTtsClient {
     await init();
     await _tts.setSpeechRate(_platformSpeechRate(_speed));
     final completer = Completer<void>();
+    _activeSpeakCompleter = completer;
     _tts.setCompletionHandler(() {
       if (!completer.isCompleted) completer.complete();
+      if (identical(_activeSpeakCompleter, completer)) {
+        _activeSpeakCompleter = null;
+      }
     });
     _tts.setErrorHandler((msg) {
       if (!completer.isCompleted) {
         completer.completeError(Exception('TTS error: $msg'));
+      }
+      if (identical(_activeSpeakCompleter, completer)) {
+        _activeSpeakCompleter = null;
       }
     });
     final result = await _tts.speak(text);
@@ -98,12 +106,28 @@ class SystemTtsClient {
           Exception('flutter_tts speak() returned $result'),
         );
       }
+      if (identical(_activeSpeakCompleter, completer)) {
+        _activeSpeakCompleter = null;
+      }
     }
-    return completer.future;
+    try {
+      return await completer.future;
+    } finally {
+      if (identical(_activeSpeakCompleter, completer)) {
+        _activeSpeakCompleter = null;
+      }
+    }
   }
 
   Future<void> stop() async {
-    if (_supported && _initialized) await _tts.stop();
+    if (_supported && _initialized) {
+      await _tts.stop();
+      final pending = _activeSpeakCompleter;
+      if (pending != null && !pending.isCompleted) {
+        pending.complete();
+      }
+      _activeSpeakCompleter = null;
+    }
   }
 
   Future<void> pause() async {

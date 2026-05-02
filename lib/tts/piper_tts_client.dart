@@ -37,6 +37,8 @@ void _extractTarBz2Archive(_ExtractRequest req) {
 }
 
 class PiperTtsClient {
+  static bool _bindingsInitialized = false;
+
   final TtsCache _cache;
   final Directory _modelsDir;
 
@@ -86,7 +88,13 @@ class PiperTtsClient {
 
   bool isModelDownloaded(String voice) {
     final modelFile = File('${_modelsDir.path}/$voice/$voice.onnx');
-    return modelFile.existsSync() && modelFile.lengthSync() > 0;
+    final tokensFile = File('${_modelsDir.path}/$voice/tokens.txt');
+    final dataDir = Directory('${_modelsDir.path}/$voice/espeak-ng-data');
+    return modelFile.existsSync() &&
+        modelFile.lengthSync() > 0 &&
+        tokensFile.existsSync() &&
+        tokensFile.lengthSync() > 0 &&
+        dataDir.existsSync();
   }
 
   /// Download and extract the Piper model tarball from sherpa-onnx releases.
@@ -150,15 +158,27 @@ class PiperTtsClient {
   Future<OfflineTts> _ensureEngine(String voice) async {
     if (_tts != null && _loadedVoice == voice) return _tts!;
 
+    if (!_bindingsInitialized) {
+      initBindings();
+      _bindingsInitialized = true;
+    }
+
     _tts?.free();
     _tts = null;
 
     final voiceDir = '${_modelsDir.path}/$voice';
     final modelPath = '$voiceDir/$voice.onnx';
+    final tokensPath = '$voiceDir/tokens.txt';
     final dataDir = '$voiceDir/espeak-ng-data';
 
     if (!File(modelPath).existsSync()) {
       throw Exception('Piper model not downloaded: $voice');
+    }
+    if (!File(tokensPath).existsSync()) {
+      throw Exception('Piper model is missing tokens.txt: $voice');
+    }
+    if (!Directory(dataDir).existsSync()) {
+      throw Exception('Piper model is missing espeak-ng-data: $voice');
     }
 
     final config = OfflineTtsConfig(
@@ -166,8 +186,8 @@ class PiperTtsClient {
         vits: OfflineTtsVitsModelConfig(
           model: modelPath,
           lexicon: '',
-          tokens: '',
-          dataDir: Directory(dataDir).existsSync() ? dataDir : '',
+          tokens: tokensPath,
+          dataDir: dataDir,
           noiseScale: 0.667,
           noiseScaleW: 0.8,
           lengthScale: 1.0,

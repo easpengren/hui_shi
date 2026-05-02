@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'screens/about_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/reader_screen.dart';
+import 'screens/settings_screen.dart';
 import 'state/reader_state.dart';
 import 'theme/app_theme.dart';
 
@@ -30,6 +32,8 @@ class LuJiApp extends StatelessWidget {
         routes: {
           '/': (_) => const ReaderScreen(),
           '/library': (_) => const LibraryScreen(),
+          '/settings': (_) => const SettingsScreen(),
+          '/about': (_) => const AboutScreen(),
         },
       ),
     );

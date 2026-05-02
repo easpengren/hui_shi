@@ -16,3 +16,16 @@
 - Improved page playback safety so selecting an unsynthesized page reports status instead of jumping to an incorrect chunk.
 - Verified repeated debug builds and installs on device after each fix.
 - Tested and briefly enabled home Wi-Fi server routing, then reverted to prior localhost USB-reverse settings for next-day troubleshooting.
+
+## 2026-05-02
+- Fixed "Current" button overlapping text by replacing Stack+Positioned with Column layout (button row above text panel).
+- Added Settings screen (/settings): engine selector (ToggleButtons), voice picker, speed slider, dark mode toggle.
+- Added About screen (/about): app description, engine explanations, open-source credits.
+- Moved TTS controls out of reader screen into Settings; reader AppBar now has gear icon.
+- Added _humanizeVoiceName() in ReaderState: converts opaque Android voice IDs (en-us-x-iob-network) to readable labels (IOB (en-US) · Online). Verified via logcat.
+- Added kPiperVoiceLabels map; Piper voices now show human names (Lessac (en-US) · Medium, etc.).
+- Fixed DropdownButtonFormField using initialValue (one-shot) → value (reactive); voice picker now reflects live state.
+- Fixed SegmentedButton illegible white-on-tan in light mode by replacing with ToggleButtons with explicit colors.
+- Added explicit text color and dropdownColor to all voice pickers so they read correctly in light mode.
+- Added dark mode SwitchListTile to Settings; dark mode toggle remains in AppBar too.
+- NOTE: adb uninstall wiped library during this session. Always use adb install -r going forward.
