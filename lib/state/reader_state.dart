@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/book.dart';
 import '../models/tts_engine.dart';
@@ -33,7 +34,7 @@ class ReaderState extends ChangeNotifier {
   PlaybackStatus playbackStatus = PlaybackStatus.idle;
   TtsEngine selectedEngine = TtsEngine.system;
   String selectedVoice = kDefaultPiperVoice;
-  double playbackSpeed = 1.0;
+  double playbackSpeed = 0.8;
   bool piperModelDownloaded = false;
   double downloadProgress = 0.0;
   String downloadStatus = '';
@@ -49,6 +50,9 @@ class ReaderState extends ChangeNotifier {
   }
 
   Future<void> _init() async {
+    final prefs = await SharedPreferences.getInstance();
+    playbackSpeed = prefs.getDouble('playbackSpeed') ?? 0.8;
+
     _piper = await PiperTtsClient.create(
       voice: selectedVoice,
       speed: playbackSpeed,
@@ -209,6 +213,8 @@ class ReaderState extends ChangeNotifier {
   Future<void> setSpeed(double speed) async {
     playbackSpeed = speed;
     _playback.setSpeed(speed);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('playbackSpeed', speed);
     notifyListeners();
   }
 
