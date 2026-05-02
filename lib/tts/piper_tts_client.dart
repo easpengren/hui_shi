@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +9,34 @@ import 'tts_cache.dart';
 import 'wav_utils.dart';
 
 typedef DownloadProgress = void Function(double fraction, String status);
+
+class _ExtractRequest {
+  final String archivePath;
+  final String outputDir;
+
+  const _ExtractRequest({required this.archivePath, required this.outputDir});
+}
+
+void _extractTarBz2Archive(_ExtractRequest req) {
+  final archiveBytes = File(req.archivePath).readAsBytesSync();
+  final bz2 = BZip2Decoder().decodeBytes(archiveBytes);
+  final archive = TarDecoder().decodeBytes(bz2);
+
+  final outDir = Directory(req.outputDir)..createSync(recursive: true);
+
+  for (final entry in archive) {
+    if (!entry.isFile) continue;
+    final parts = entry.name.split('/');
+    final relative = parts.length > 1
+        ? parts.sublist(1).join('/')
+        : entry.name;
+    if (relative.isEmpty) continue;
+
+    final outFile = File('${outDir.path}/$relative');
+    outFile.createSync(recursive: true);
+    outFile.writeAsBytesSync(entry.content as List<int>);
+  }
+}
 
 class PiperTtsClient {
   final TtsCache _cache;
@@ -48,9 +77,7 @@ class PiperTtsClient {
   void setVoice(String voice) {
     if (_voice != voice) {
       _voice = voice;
-      // Release engine so it is re-created on next synthesis
-      _tts?.free();
-      _tts = null;
+      // Defer engine recreation to _ensureEngine to avoid freeing while active.
       _loadedVoice = null;
     }
   }
@@ -78,47 +105,44 @@ class PiperTtsClient {
     }
 
     final total = response.contentLength ?? 0;
-    final bytes = <int>[];
+    final tmpArchive = File('${_modelsDir.path}/$voice.tar.bz2.part');
+    tmpArchive.createSync(recursive: true);
+    final sink = tmpArchive.openWrite();
     var received = 0;
 
-    await for (final chunk in response.stream) {
-      bytes.addAll(chunk);
-      received += chunk.length;
-      if (total > 0) {
-        onProgress(
-          received / total * 0.70,
-          'Downloading… ${(received / 1048576).toStringAsFixed(1)} MB',
-        );
+    try {
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) {
+          onProgress(
+            received / total * 0.70,
+            'Downloading… ${(received / 1048576).toStringAsFixed(1)} MB',
+          );
+        }
       }
+    } finally {
+      await sink.flush();
+      await sink.close();
     }
 
-    onProgress(0.72, 'Decompressing…');
-    final bz2 = BZip2Decoder().decodeBytes(bytes);
-    onProgress(0.80, 'Extracting…');
-    final archive = TarDecoder().decodeBytes(bz2);
+    onProgress(0.72, 'Decompressing and extracting…');
 
     final voiceDir = Directory('${_modelsDir.path}/$voice')
       ..createSync(recursive: true);
 
-    var done = 0;
-    for (final entry in archive) {
-      if (!entry.isFile) continue;
-      // Strip leading archive directory (e.g. "vits-piper-en_US-lessac-medium/")
-      final parts = entry.name.split('/');
-      final relative = parts.length > 1
-          ? parts.sublist(1).join('/')
-          : entry.name;
-      if (relative.isEmpty) continue;
-
-      final outFile = File('${voiceDir.path}/$relative');
-      outFile.createSync(recursive: true);
-      outFile.writeAsBytesSync(entry.content as List<int>);
-      done++;
-      if (done % 25 == 0) {
-        onProgress(
-          0.80 + (done / archive.length) * 0.20,
-          'Extracting ($done / ${archive.length})…',
-        );
+    try {
+      await Isolate.run(
+        () => _extractTarBz2Archive(
+          _ExtractRequest(
+            archivePath: tmpArchive.path,
+            outputDir: voiceDir.path,
+          ),
+        ),
+      );
+    } finally {
+      if (tmpArchive.existsSync()) {
+        tmpArchive.deleteSync();
       }
     }
 

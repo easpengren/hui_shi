@@ -87,7 +87,9 @@ class PlaybackController {
         if (_stopped) break;
         _currentIndex = i;
         _emitChunk(i);
-        await _system.speak(sanitizeForTts(_chunks[i]));
+        final sanitized = sanitizeForTts(_chunks[i]);
+        if (sanitized.isEmpty) continue;
+        await _system.speak(sanitized);
         if (_stopped) break;
         // After each chunk, check if we were paused externally
         while (_status == PlaybackStatus.paused && !_stopped) {
@@ -134,10 +136,12 @@ class PlaybackController {
     bool started = false;
     try {
       for (var i = startIndex; i < _chunks.length && !_stopped; i++) {
+        final sanitized = sanitizeForTts(_chunks[i]);
+        if (sanitized.isEmpty) continue;
         final file = await _piper.synthesizeChunk(
           bookId,
           i,
-          sanitizeForTts(_chunks[i]),
+          sanitized,
         );
         if (_stopped) break;
         await _playlist!.add(AudioSource.uri(Uri.file(file.path)));
@@ -157,17 +161,32 @@ class PlaybackController {
   Future<void> pause() async {
     if (_status != PlaybackStatus.playing) return;
     _setStatus(PlaybackStatus.paused);
-    await _player.pause();
-    await _system.pause();
+    if (_engine == TtsEngine.piper) {
+      await _player.pause();
+      return;
+    }
+
+    // flutter_tts pause/resume is not reliable on Android across engines.
+    // Stop current utterance and resume from the next chunk to avoid replaying
+    // from the start of the same chunk after every pause.
+    if (_currentIndex < _chunks.length - 1) {
+      _currentIndex += 1;
+      _emitChunk(_currentIndex);
+    }
+    _stopped = true;
+    await _system.stop();
   }
 
   Future<void> resume() async {
     if (_status != PlaybackStatus.paused) return;
-    _setStatus(PlaybackStatus.playing);
     if (_engine == TtsEngine.piper) {
+      _setStatus(PlaybackStatus.playing);
       await _player.play();
+      return;
     }
-    // System TTS resumes automatically from the polling loop in _playSystem.
+
+    _stopped = false;
+    await _playSystem();
   }
 
   Future<void> stop() async {

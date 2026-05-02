@@ -16,12 +16,21 @@ class SystemTtsClient {
 
   final FlutterTts _tts = FlutterTts();
   bool _initialized = false;
-  double _speed = 1.0;
+  double _speed = 0.4;
+
+  // FlutterTts speech-rate values are platform-dependent; on Android
+  // values around 0.5 can still sound very fast. Map UI speed to a safer range.
+  double _platformSpeechRate(double uiSpeed) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return (uiSpeed * 0.6).clamp(0.08, 0.9);
+    }
+    return uiSpeed.clamp(0.1, 1.0);
+  }
 
   Future<void> init() async {
     if (!_supported || _initialized) return;
     await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(1.0);
+    await _tts.setSpeechRate(_platformSpeechRate(_speed));
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
     _initialized = true;
@@ -29,7 +38,7 @@ class SystemTtsClient {
 
   Future<void> setSpeed(double speed) async {
     _speed = speed;
-    if (_initialized) await _tts.setSpeechRate(speed);
+    if (_initialized) await _tts.setSpeechRate(_platformSpeechRate(speed));
   }
 
   /// Returns a list of available voice maps [{'name': ..., 'locale': ...}].
@@ -43,6 +52,7 @@ class SystemTtsClient {
           (v) => {
             'name': v['name']?.toString() ?? '',
             'locale': v['locale']?.toString() ?? '',
+            'notInstalled': v['notInstalled']?.toString() ?? 'false',
           },
         )
         .toList();
@@ -51,7 +61,18 @@ class SystemTtsClient {
   Future<void> setVoice(String name, String locale) async {
     if (!_supported) return;
     await init();
+    await _tts.stop();
+    final normalized = locale.replaceAll('_', '-');
+    await _tts.setLanguage(normalized);
     await _tts.setVoice({'name': name, 'locale': locale});
+    await _tts.setSpeechRate(_platformSpeechRate(_speed));
+  }
+
+  Future<void> setDefaultVoice() async {
+    if (!_supported) return;
+    await init();
+    await _tts.stop();
+    await _tts.setLanguage('en-US');
   }
 
   /// Speak [text] and return a [Future] that completes when the utterance
@@ -59,7 +80,7 @@ class SystemTtsClient {
   Future<void> speak(String text) async {
     if (!_supported) return; // no-op on Linux/Windows
     await init();
-    await _tts.setSpeechRate(_speed);
+    await _tts.setSpeechRate(_platformSpeechRate(_speed));
     final completer = Completer<void>();
     _tts.setCompletionHandler(() {
       if (!completer.isCompleted) completer.complete();
