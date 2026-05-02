@@ -46,3 +46,4 @@ dist/
 
 # Docker
 kokoro-web/.git/
+.gradle/
