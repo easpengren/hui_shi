@@ -7,11 +7,8 @@ class AboutScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final muted = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context)
-              .colorScheme
-              .onSurface
-              .withValues(alpha: 0.65),
-        );
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('About')),
@@ -32,13 +29,9 @@ class AboutScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineSmall,
             ),
           ),
-          Center(
-            child: Text('Offline TTS Reader', style: muted),
-          ),
+          Center(child: Text('Offline TTS Reader', style: muted)),
           const SizedBox(height: 6),
-          Center(
-            child: Text('Version 1.0.0', style: muted),
-          ),
+          Center(child: Text('Version 1.0.0', style: muted)),
           const SizedBox(height: 28),
           const DoubleRule(),
           const SizedBox(height: 20),
@@ -47,8 +40,10 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('What is Lu Ji?',
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  'What is Lu Ji?',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 const SizedBox(height: 8),
                 Text(
                   'Lu Ji is an offline text-to-speech reader for books and documents. '
@@ -65,8 +60,7 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Engines',
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text('Engines', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 8),
                 _EngineRow(
                   name: 'System TTS',
@@ -92,8 +86,10 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Open Source',
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  'Open Source',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 const SizedBox(height: 8),
                 Text(
                   'Lu Ji uses the following open-source projects:',
@@ -132,10 +128,8 @@ class _EngineRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text(description,
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(description, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),
@@ -152,18 +146,14 @@ class _CreditRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final muted = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context)
-              .colorScheme
-              .onSurface
-              .withValues(alpha: 0.6),
-        );
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
           const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
-          Text(project,
-              style: const TextStyle(fontWeight: FontWeight.w500)),
+          Text(project, style: const TextStyle(fontWeight: FontWeight.w500)),
           const SizedBox(width: 6),
           Text('— $note', style: muted),
         ],

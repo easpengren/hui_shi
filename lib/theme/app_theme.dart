@@ -172,9 +172,7 @@ class AppTheme {
             if (s.contains(WidgetState.selected)) return _paperBright;
             return _ink;
           }),
-          side: WidgetStateProperty.all(
-            const BorderSide(color: _paperLine),
-          ),
+          side: WidgetStateProperty.all(const BorderSide(color: _paperLine)),
         ),
       ),
       navigationBarTheme: const NavigationBarThemeData(height: 68),

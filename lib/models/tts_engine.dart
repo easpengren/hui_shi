@@ -23,5 +23,4 @@ const Map<String, String> kPiperVoiceLabels = {
   'en_GB-jenny_dioco-medium': 'Jenny (en-GB) · Medium',
 };
 
-String piperVoiceLabel(String voice) =>
-    kPiperVoiceLabels[voice] ?? voice;
+String piperVoiceLabel(String voice) => kPiperVoiceLabels[voice] ?? voice;

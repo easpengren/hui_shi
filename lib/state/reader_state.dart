@@ -436,7 +436,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       ...systemVoices.map(
         (v) => {
           'id': '${v['locale'] ?? ''}\u0001${v['name'] ?? ''}',
-          'label': '${_isPreferredSystemVoice(v['name'] ?? '') ? '★ ' : ''}${_humanizeVoiceName(v['name'] ?? 'Unnamed', v['locale'] ?? '')}',
+          'label':
+              '${_isPreferredSystemVoice(v['name'] ?? '') ? '★ ' : ''}${_humanizeVoiceName(v['name'] ?? 'Unnamed', v['locale'] ?? '')}',
           'name': v['name'] ?? '',
         },
       ),
@@ -461,7 +462,10 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       selectedSystemVoiceName = best['name'] ?? '';
       selectedSystemVoiceLocale = best['locale'] ?? '';
       if (selectedSystemVoiceName.isNotEmpty) {
-        await _system.setVoice(selectedSystemVoiceName, selectedSystemVoiceLocale);
+        await _system.setVoice(
+          selectedSystemVoiceName,
+          selectedSystemVoiceLocale,
+        );
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('systemVoiceName', selectedSystemVoiceName);
         await prefs.setString('systemVoiceLocale', selectedSystemVoiceLocale);
@@ -519,7 +523,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       'news': 'News',
       'casual': 'Casual',
     };
-    return map[tier.toLowerCase()] ?? (tier[0].toUpperCase() + tier.substring(1));
+    return map[tier.toLowerCase()] ??
+        (tier[0].toUpperCase() + tier.substring(1));
   }
 
   String _shortLocale(String locale) {
@@ -568,7 +573,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     _playback.setEngine(engine);
 
     if (engine == TtsEngine.piper && !piperModelDownloaded) {
-      downloadStatus = 'Piper selected. Download the selected Piper voice to play.';
+      downloadStatus =
+          'Piper selected. Download the selected Piper voice to play.';
     } else if (engine == TtsEngine.system) {
       downloadStatus = selectedSystemVoiceName.isEmpty
           ? 'System TTS selected (Android default voice).'

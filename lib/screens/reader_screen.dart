@@ -361,8 +361,10 @@ class _ContentAreaState extends State<_ContentArea> {
               label: const Text('Current'),
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
               onPressed: _jumpToCurrent,
             ),

@@ -43,8 +43,7 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Engine',
-                      style: Theme.of(context).textTheme.labelLarge),
+                  Text('Engine', style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 10),
                   ToggleButtons(
                     isSelected: TtsEngine.values
@@ -61,10 +60,11 @@ class SettingsScreen extends StatelessWidget {
                     children: TtsEngine.values
                         .map(
                           (e) => Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(e.displayName,
-                                style: const TextStyle(fontSize: 13)),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Text(
+                              e.displayName,
+                              style: const TextStyle(fontSize: 13),
+                            ),
                           ),
                         )
                         .toList(),
@@ -87,15 +87,19 @@ class SettingsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Android Voice',
-                        style: Theme.of(context).textTheme.labelLarge),
+                    Text(
+                      'Android Voice',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
                       value: state.selectedSystemVoiceName.isNotEmpty
                           ? '${state.selectedSystemVoiceLocale}\u0001${state.selectedSystemVoiceName}'
                           : 'default',
                       style: const TextStyle(
-                          color: Color(0xFF1A242B), fontSize: 14),
+                        color: Color(0xFF1A242B),
+                        fontSize: 14,
+                      ),
                       dropdownColor: const Color(0xFFFBF8F1),
                       decoration: const InputDecoration(
                         isDense: true,
@@ -112,7 +116,8 @@ class SettingsScreen extends StatelessWidget {
                                 option['label'] ?? '',
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    color: Color(0xFF1A242B)),
+                                  color: Color(0xFF1A242B),
+                                ),
                               ),
                             ),
                           )
@@ -182,8 +187,7 @@ class _SpeedSectionState extends State<_SpeedSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Playback Speed',
-            style: Theme.of(context).textTheme.labelLarge),
+        Text('Playback Speed', style: Theme.of(context).textTheme.labelLarge),
         Row(
           children: [
             const Text('Slow'),
@@ -238,13 +242,15 @@ class _PiperVoiceSection extends StatelessWidget {
           ),
           isExpanded: true,
           items: kPiperVoices
-              .map((v) => DropdownMenuItem(
-                    value: v,
-                    child: Text(
-                      piperVoiceLabel(v),
-                      style: const TextStyle(color: Color(0xFF1A242B)),
-                    ),
-                  ))
+              .map(
+                (v) => DropdownMenuItem(
+                  value: v,
+                  child: Text(
+                    piperVoiceLabel(v),
+                    style: const TextStyle(color: Color(0xFF1A242B)),
+                  ),
+                ),
+              )
               .toList(),
           onChanged: (v) {
             if (v != null) state.setVoice(v);
@@ -258,8 +264,10 @@ class _PiperVoiceSection extends StatelessWidget {
                   children: [
                     LinearProgressIndicator(value: state.downloadProgress),
                     const SizedBox(height: 4),
-                    Text(state.downloadStatus,
-                        style: Theme.of(context).textTheme.labelSmall),
+                    Text(
+                      state.downloadStatus,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
                   ],
                 )
               : Column(
@@ -267,13 +275,17 @@ class _PiperVoiceSection extends StatelessWidget {
                   children: [
                     ElevatedButton.icon(
                       icon: const Icon(Icons.download),
-                      label: Text('Download ${piperVoiceLabel(state.selectedVoice)}'),
+                      label: Text(
+                        'Download ${piperVoiceLabel(state.selectedVoice)}',
+                      ),
                       onPressed: state.downloadPiperModel,
                     ),
                     if (state.downloadStatus.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(state.downloadStatus,
-                          style: Theme.of(context).textTheme.labelSmall),
+                      Text(
+                        state.downloadStatus,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
                     ],
                   ],
                 )
@@ -285,8 +297,10 @@ class _PiperVoiceSection extends StatelessWidget {
                 children: [
                   const Icon(Icons.check_circle, color: Colors.green, size: 16),
                   const SizedBox(width: 4),
-                  Text('Model ready',
-                      style: Theme.of(context).textTheme.labelSmall),
+                  Text(
+                    'Model ready',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
                   const SizedBox(width: 8),
                   TextButton.icon(
                     onPressed: state.downloadPiperModel,
@@ -296,8 +310,10 @@ class _PiperVoiceSection extends StatelessWidget {
                 ],
               ),
               if (state.downloadStatus.isNotEmpty)
-                Text(state.downloadStatus,
-                    style: Theme.of(context).textTheme.labelSmall),
+                Text(
+                  state.downloadStatus,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
             ],
           ),
       ],
