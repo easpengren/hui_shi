@@ -138,11 +138,7 @@ class PlaybackController {
       for (var i = startIndex; i < _chunks.length && !_stopped; i++) {
         final sanitized = sanitizeForTts(_chunks[i]);
         if (sanitized.isEmpty) continue;
-        final file = await _piper.synthesizeChunk(
-          bookId,
-          i,
-          sanitized,
-        );
+        final file = await _piper.synthesizeChunk(bookId, i, sanitized);
         if (_stopped) break;
         await _playlist!.add(AudioSource.uri(Uri.file(file.path)));
         if (!started) {

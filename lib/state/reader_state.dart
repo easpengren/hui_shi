@@ -87,7 +87,10 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     selectedSystemVoiceName = prefs.getString('systemVoiceName') ?? '';
     selectedSystemVoiceLocale = prefs.getString('systemVoiceLocale') ?? '';
     if (selectedSystemVoiceName.isNotEmpty) {
-      await _system.setVoice(selectedSystemVoiceName, selectedSystemVoiceLocale);
+      await _system.setVoice(
+        selectedSystemVoiceName,
+        selectedSystemVoiceLocale,
+      );
     }
     await _loadSystemVoices();
 
@@ -136,9 +139,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> toggleThemeMode() async {
-    final next = themeMode == ThemeMode.dark
-        ? ThemeMode.light
-        : ThemeMode.dark;
+    final next = themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     await setThemeMode(next);
   }
 
@@ -233,7 +234,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
             'No readable text found in this PDF. It may be a scanned image PDF '
             'with no text layer — Lu Ji can only read PDFs that contain selectable text.';
       } else {
-        errorMessage = 'The file appears to be empty or contains no readable text.';
+        errorMessage =
+            'The file appears to be empty or contains no readable text.';
       }
       loadState = LoadState.error;
       notifyListeners();
@@ -379,6 +381,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _playback.play();
   }
+
   Future<void> pause() => _playback.pause();
   Future<void> resume() => _playback.resume();
   Future<void> seekToChunk(int index) => _playback.seekToChunk(index);
@@ -400,13 +403,12 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     });
     systemVoiceOptions = [
       {'id': 'default', 'label': 'Use Android default'},
-      ...systemVoices
-          .map(
-            (v) => {
-              'id': '${v['locale'] ?? ''}\u0001${v['name'] ?? ''}',
-              'label': '${v['locale'] ?? 'unknown'} - ${v['name'] ?? 'Unnamed'}',
-            },
-          ),
+      ...systemVoices.map(
+        (v) => {
+          'id': '${v['locale'] ?? ''}\u0001${v['name'] ?? ''}',
+          'label': '${v['locale'] ?? 'unknown'} - ${v['name'] ?? 'Unnamed'}',
+        },
+      ),
     ];
     notifyListeners();
   }
@@ -481,8 +483,12 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     final entry = library.firstWhere(
       (e) => e.id == bookId,
       orElse: () => LibraryEntry(
-        id: '', title: '', filePath: '', sourceType: '',
-        lastChunkIndex: 0, totalChunks: 0,
+        id: '',
+        title: '',
+        filePath: '',
+        sourceType: '',
+        lastChunkIndex: 0,
+        totalChunks: 0,
         lastOpenedMs: 0,
       ),
     );
@@ -494,17 +500,18 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     final existing = library.firstWhere(
       (e) => e.id == bookId,
       orElse: () => LibraryEntry(
-        id: bookId, title: title, filePath: '',
-        sourceType: '', lastChunkIndex: currentChunkIndex,
+        id: bookId,
+        title: title,
+        filePath: '',
+        sourceType: '',
+        lastChunkIndex: currentChunkIndex,
         totalChunks: chunks.length,
         lastOpenedMs: DateTime.now().millisecondsSinceEpoch,
       ),
     );
     final bm = Bookmark(
       chunkIndex: currentChunkIndex,
-      label: label.isEmpty
-          ? 'Chunk ${currentChunkIndex + 1}'
-          : label,
+      label: label.isEmpty ? 'Chunk ${currentChunkIndex + 1}' : label,
       createdMs: DateTime.now().millisecondsSinceEpoch,
     );
     // Replace if bookmark at same chunk already exists
@@ -521,13 +528,19 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     final existing = library.firstWhere(
       (e) => e.id == bookId,
       orElse: () => LibraryEntry(
-        id: '', title: '', filePath: '', sourceType: '',
-        lastChunkIndex: 0, totalChunks: 0, lastOpenedMs: 0,
+        id: '',
+        title: '',
+        filePath: '',
+        sourceType: '',
+        lastChunkIndex: 0,
+        totalChunks: 0,
+        lastOpenedMs: 0,
       ),
     );
     if (existing.id.isEmpty) return;
-    final updated =
-        existing.bookmarks.where((b) => b.chunkIndex != chunkIndex).toList();
+    final updated = existing.bookmarks
+        .where((b) => b.chunkIndex != chunkIndex)
+        .toList();
     await _library.save(existing.copyWith(bookmarks: updated));
     await _loadLibrary();
   }

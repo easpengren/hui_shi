@@ -27,9 +27,7 @@ void _extractTarBz2Archive(_ExtractRequest req) {
   for (final entry in archive) {
     if (!entry.isFile) continue;
     final parts = entry.name.split('/');
-    final relative = parts.length > 1
-        ? parts.sublist(1).join('/')
-        : entry.name;
+    final relative = parts.length > 1 ? parts.sublist(1).join('/') : entry.name;
     if (relative.isEmpty) continue;
 
     final outFile = File('${outDir.path}/$relative');

@@ -64,8 +64,8 @@ class DossierHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final muted = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-        );
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

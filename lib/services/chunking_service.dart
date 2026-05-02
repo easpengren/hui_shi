@@ -14,9 +14,7 @@ List<String> chunkText(String text, {int maxLen = kMaxChunkLength}) {
   final chunks = <String>[];
 
   // Sentence boundaries for Latin and CJK punctuation.
-  final sentenceParts = normalized.split(
-    RegExp(r'(?<=[.!?;。！？；…])\s+|\n+'),
-  );
+  final sentenceParts = normalized.split(RegExp(r'(?<=[.!?;。！？；…])\s+|\n+'));
 
   for (final part in sentenceParts) {
     final sentence = part.trim();

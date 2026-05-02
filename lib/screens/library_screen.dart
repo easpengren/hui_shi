@@ -93,7 +93,11 @@ class _LibraryTile extends StatelessWidget {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(entry.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            title: Text(
+              entry.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Column(
@@ -107,27 +111,38 @@ class _LibraryTile extends StatelessWidget {
                       ),
                       if (hasBookmarks) ...[
                         const SizedBox(width: 8),
-                        Icon(Icons.bookmark, size: 12,
-                            color: Theme.of(context).colorScheme.secondary),
+                        Icon(
+                          Icons.bookmark,
+                          size: 12,
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
                         const SizedBox(width: 2),
                         Text(
                           '${entry.bookmarks.length}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.secondary,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.secondary,
+                              ),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 6),
-                  LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 3),
+                  LinearProgressIndicator(
+                    value: progress.clamp(0.0, 1.0),
+                    minHeight: 3,
+                  ),
                 ],
               ),
             ),
             trailing: Wrap(
               spacing: 2,
               children: [
-                IconButton(icon: const Icon(Icons.play_arrow), tooltip: 'Open & resume', onPressed: onOpen),
+                IconButton(
+                  icon: const Icon(Icons.play_arrow),
+                  tooltip: 'Open & resume',
+                  onPressed: onOpen,
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Remove from library',
@@ -135,9 +150,14 @@ class _LibraryTile extends StatelessWidget {
                     context: context,
                     builder: (_) => AlertDialog(
                       title: const Text('Remove book?'),
-                      content: Text('Remove "${entry.title}" from your library? The file is not deleted.'),
+                      content: Text(
+                        'Remove "${entry.title}" from your library? The file is not deleted.',
+                      ),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
                         TextButton(
                           onPressed: () {
                             Navigator.pop(context);
@@ -161,10 +181,7 @@ class _LibraryTile extends StatelessWidget {
                 children: entry.bookmarks.map((bm) {
                   return ActionChip(
                     avatar: const Icon(Icons.bookmark_outline, size: 14),
-                    label: Text(
-                      bm.label,
-                      style: const TextStyle(fontSize: 12),
-                    ),
+                    label: Text(bm.label, style: const TextStyle(fontSize: 12)),
                     tooltip: 'Chunk ${bm.chunkIndex + 1}',
                     onPressed: () async {
                       final state = context.read<ReaderState>();

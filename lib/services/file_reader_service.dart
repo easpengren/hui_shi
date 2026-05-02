@@ -141,7 +141,9 @@ class FileReaderService {
     final sliced = text.length <= _maxExtractedChars
         ? text
         : text.substring(0, _maxExtractedChars);
-    debugPrint('[LuJi] _extractPdf: done. chars=${sliced.length}, truncated=$truncated, nextPage=$nextPage');
+    debugPrint(
+      '[LuJi] _extractPdf: done. chars=${sliced.length}, truncated=$truncated, nextPage=$nextPage',
+    );
     return PdfExtractResult(
       content: sliced,
       truncated: truncated && nextPage <= pageCount,

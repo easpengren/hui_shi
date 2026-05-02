@@ -24,10 +24,10 @@ String sanitizeForTts(String input) {
   return input
       .replaceAll(_codeFenceRegex, ' ')
       .replaceAll(_xmlTagRegex, ' ')
-  // Convert ellipses/dot-runs into pauses instead of spoken punctuation.
-  .replaceAll(RegExp(r'\.{2,}|…+'), ' ')
-  // Remove isolated single-dot tokens (" . ", leading/trailing ".").
-  .replaceAll(RegExp(r'(^|\s)\.(?=\s|$)'), ' ')
+      // Convert ellipses/dot-runs into pauses instead of spoken punctuation.
+      .replaceAll(RegExp(r'\.{2,}|…+'), ' ')
+      // Remove isolated single-dot tokens (" . ", leading/trailing ".").
+      .replaceAll(RegExp(r'(^|\s)\.(?=\s|$)'), ' ')
       .replaceAll(_whitespaceRegex, ' ')
       .trim();
 }

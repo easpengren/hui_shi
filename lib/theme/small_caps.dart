@@ -8,16 +8,14 @@ class SmallCapsText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = (style ?? Theme.of(context).textTheme.labelMedium)?.copyWith(
+    final base =
+        (style ?? Theme.of(context).textTheme.labelMedium)?.copyWith(
           letterSpacing: 1.4,
         ) ??
         const TextStyle(fontSize: 13, letterSpacing: 1.4);
 
     final minSize = (base.fontSize ?? 13).clamp(13, 200).toDouble();
-    final reduced = base.copyWith(
-      fontSize: minSize * 0.82,
-      letterSpacing: 1.1,
-    );
+    final reduced = base.copyWith(fontSize: minSize * 0.82, letterSpacing: 1.1);
 
     final spans = <InlineSpan>[];
     for (final rune in text.runes) {

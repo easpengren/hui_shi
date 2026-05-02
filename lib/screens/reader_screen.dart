@@ -45,7 +45,8 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                 children: [
                   const SizedBox(height: 8),
                   Container(
-                    width: 40, height: 4,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
                       color: Theme.of(context).dividerColor,
                       borderRadius: BorderRadius.circular(2),
@@ -116,7 +117,8 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                             subtitle: Text('Chunk ${bm.chunkIndex + 1}'),
                             trailing: IconButton(
                               icon: const Icon(Icons.delete_outline),
-                              onPressed: () => state.removeBookmark(bm.chunkIndex),
+                              onPressed: () =>
+                                  state.removeBookmark(bm.chunkIndex),
                             ),
                             onTap: () {
                               Navigator.pop(context);
@@ -334,7 +336,9 @@ class _ContentAreaState extends State<_ContentArea> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: isCurrent
-                    ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.25)
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.25)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -343,7 +347,9 @@ class _ContentAreaState extends State<_ContentArea> {
                 style: TextStyle(
                   fontSize: 17,
                   height: 1.6,
-                  color: isCurrent ? Theme.of(context).colorScheme.onSurface : null,
+                  color: isCurrent
+                      ? Theme.of(context).colorScheme.onSurface
+                      : null,
                 ),
               ),
             ),
@@ -367,84 +373,89 @@ class _TtsControls extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('TTS: ${state.selectedEngine.displayName}', style: Theme.of(context).textTheme.labelLarge),
+            Text(
+              'TTS: ${state.selectedEngine.displayName}',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
             const SizedBox(height: 8),
-              // Engine selector
-              SegmentedButton<TtsEngine>(
-                segments: TtsEngine.values
+            // Engine selector
+            SegmentedButton<TtsEngine>(
+              segments: TtsEngine.values
+                  .map(
+                    (e) => ButtonSegment(
+                      value: e,
+                      label: Text(
+                        e.displayName,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              selected: {state.selectedEngine},
+              onSelectionChanged: (s) => state.setEngine(s.first),
+            ),
+            const SizedBox(height: 8),
+            // Piper voice picker + download
+            if (state.selectedEngine == TtsEngine.piper) ...[
+              _PiperVoiceRow(state: state),
+              const SizedBox(height: 4),
+            ],
+            // System voice picker
+            if (state.selectedEngine == TtsEngine.system &&
+                state.systemVoices.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                initialValue: state.selectedSystemVoiceName.isNotEmpty
+                    ? '${state.selectedSystemVoiceLocale}\u0001${state.selectedSystemVoiceName}'
+                    : 'default',
+                decoration: const InputDecoration(
+                  labelText: 'Android voice',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: state.systemVoiceOptions
                     .map(
-                      (e) => ButtonSegment(
-                        value: e,
-                        label: Text(
-                          e.displayName,
-                          style: const TextStyle(fontSize: 12),
+                      (option) => DropdownMenuItem(
+                        value: option['id'],
+                        child: Text(
+                          option['label'] ?? '',
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     )
                     .toList(),
-                selected: {state.selectedEngine},
-                onSelectionChanged: (s) => state.setEngine(s.first),
+                onChanged: (selection) {
+                  if (selection == null) return;
+                  if (selection == 'default') {
+                    state.setSystemVoice('', '');
+                    return;
+                  }
+
+                  final i = selection.indexOf('\u0001');
+                  if (i <= 0) return;
+                  final locale = selection.substring(0, i);
+                  final name = selection.substring(i + 1);
+                  state.setSystemVoice(name, locale);
+                },
               ),
               const SizedBox(height: 8),
-              // Piper voice picker + download
-              if (state.selectedEngine == TtsEngine.piper) ...[
-                _PiperVoiceRow(state: state),
-                const SizedBox(height: 4),
-              ],
-              // System voice picker
-              if (state.selectedEngine == TtsEngine.system &&
-                  state.systemVoices.isNotEmpty) ...[
-                DropdownButtonFormField<String>(
-                  initialValue: state.selectedSystemVoiceName.isNotEmpty
-                      ? '${state.selectedSystemVoiceLocale}\u0001${state.selectedSystemVoiceName}'
-                      : 'default',
-                  decoration: const InputDecoration(
-                    labelText: 'Android voice',
-                    isDense: true,
-                    border: OutlineInputBorder(),
+            ],
+            // Speed slider
+            Row(
+              children: [
+                const Text('Speed'),
+                Expanded(
+                  child: Slider(
+                    min: 0.1,
+                    max: 2.0,
+                    divisions: 19,
+                    value: state.playbackSpeed,
+                    label: '${state.playbackSpeed.toStringAsFixed(1)}×',
+                    onChanged: state.setSpeed,
                   ),
-                  items: state.systemVoiceOptions
-                      .map((option) => DropdownMenuItem(
-                            value: option['id'],
-                            child: Text(
-                              option['label'] ?? '',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ))
-                      .toList(),
-                  onChanged: (selection) {
-                    if (selection == null) return;
-                    if (selection == 'default') {
-                      state.setSystemVoice('', '');
-                      return;
-                    }
-
-                    final i = selection.indexOf('\u0001');
-                    if (i <= 0) return;
-                    final locale = selection.substring(0, i);
-                    final name = selection.substring(i + 1);
-                    state.setSystemVoice(name, locale);
-                  },
                 ),
-                const SizedBox(height: 8),
+                Text('${state.playbackSpeed.toStringAsFixed(1)}×'),
               ],
-              // Speed slider
-              Row(
-                children: [
-                  const Text('Speed'),
-                  Expanded(
-                    child: Slider(
-                      min: 0.1,
-                      max: 2.0,
-                      divisions: 19,
-                      value: state.playbackSpeed,
-                      label: '${state.playbackSpeed.toStringAsFixed(1)}×',
-                      onChanged: state.setSpeed,
-                    ),
-                  ),
-                  Text('${state.playbackSpeed.toStringAsFixed(1)}×'),
-                ],
-              ),
+            ),
           ],
         ),
       ),
