@@ -27,8 +27,10 @@ class PlaybackController {
   List<String> _chunks = [];
   int _currentIndex = 0;
   bool _stopped = false;
+  int _playSession = 0;
 
   ConcatenatingAudioSource? _playlist;
+  final List<int> _playlistChunkIndexes = [];
   StreamSubscription<int?>? _playerIndexSub;
   StreamSubscription<PlayerState>? _playerCompleteSub;
 
@@ -125,6 +127,7 @@ class PlaybackController {
   // ── Piper TTS (just_audio + progressive synthesis) ─────────────────────
 
   Future<void> _playPiper() async {
+    final sessionId = ++_playSession;
     _setStatus(PlaybackStatus.loading);
 
     try {
@@ -132,12 +135,17 @@ class PlaybackController {
       await session.configure(const AudioSessionConfiguration.speech());
 
       _playlist = ConcatenatingAudioSource(children: []);
+      _playlistChunkIndexes.clear();
       await _player.setAudioSource(_playlist!);
 
       _playerIndexSub?.cancel();
       _playerIndexSub = _player.currentIndexStream.listen((idx) {
         if (idx != null) {
-          _currentIndex = _chunkOffset + idx;
+          if (idx >= 0 && idx < _playlistChunkIndexes.length) {
+            _currentIndex = _playlistChunkIndexes[idx];
+          } else {
+            _currentIndex = _chunkOffset + idx;
+          }
           _emitChunk(_currentIndex);
         }
       });
@@ -148,7 +156,7 @@ class PlaybackController {
           .listen((_) => _setStatus(PlaybackStatus.idle));
 
       // Synthesize in background; start playback as soon as first chunk lands.
-      _synthesizeAndAppend(_bookId!, _currentIndex).ignore();
+      _synthesizeAndAppend(_bookId!, _currentIndex, sessionId).ignore();
     } catch (e) {
       _emitError('Piper playback setup failed: $e');
       _setStatus(PlaybackStatus.idle);
@@ -157,29 +165,38 @@ class PlaybackController {
 
   int _chunkOffset = 0;
 
-  Future<void> _synthesizeAndAppend(String bookId, int startIndex) async {
+  Future<void> _synthesizeAndAppend(
+    String bookId,
+    int startIndex,
+    int sessionId,
+  ) async {
     _chunkOffset = startIndex;
     bool started = false;
     try {
       for (var i = startIndex; i < _chunks.length && !_stopped; i++) {
+        if (sessionId != _playSession) break;
         final sanitized = sanitizeForTts(_chunks[i]);
         if (sanitized.isEmpty) continue;
         final file = await _piper.synthesizeChunk(bookId, i, sanitized);
-        if (_stopped) break;
+        if (_stopped || sessionId != _playSession) break;
         await _playlist!.add(AudioSource.uri(Uri.file(file.path)));
+        _playlistChunkIndexes.add(i);
         if (!started) {
           started = true;
+          if (sessionId != _playSession) break;
           _setStatus(PlaybackStatus.playing);
           await _player.play();
         }
       }
-      if (!started && !_stopped) {
+      if (!started && !_stopped && sessionId == _playSession) {
         _emitError('Piper failed: no speakable text chunks were generated.');
         _setStatus(PlaybackStatus.idle);
       }
     } catch (e) {
-      _emitError('Piper synthesis failed: $e');
-      _setStatus(PlaybackStatus.idle);
+      if (sessionId == _playSession) {
+        _emitError('Piper synthesis failed: $e');
+        _setStatus(PlaybackStatus.idle);
+      }
     }
   }
 
@@ -218,10 +235,12 @@ class PlaybackController {
 
   Future<void> stop() async {
     _stopped = true;
+    _playSession += 1;
     _playerIndexSub?.cancel();
     _playerIndexSub = null;
     _playerCompleteSub?.cancel();
     _playerCompleteSub = null;
+    _playlistChunkIndexes.clear();
     await _player.stop();
     await _system.stop();
     _setStatus(PlaybackStatus.idle);

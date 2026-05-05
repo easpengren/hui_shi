@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../models/tts_engine.dart';
 import '../playback/playback_controller.dart';
 import '../state/reader_state.dart';
@@ -222,82 +223,171 @@ class _ContentArea extends StatefulWidget {
 }
 
 class _ContentAreaState extends State<_ContentArea> {
-  final ScrollController _scroll = ScrollController();
-  // One key per chunk so we can measure item positions.
-  final List<GlobalKey> _keys = [];
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
+  final TextEditingController _searchController = TextEditingController();
+  final List<int> _searchMatches = [];
+  int _searchMatchPos = -1;
   int _lastScrolledIndex = -1;
+  String _lastSearchQuery = '';
 
   @override
   void didUpdateWidget(_ContentArea oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _syncKeys();
-    _maybeScrollToCurrent();
+    if (_searchController.text.trim().isNotEmpty) {
+      _rebuildSearchMatches(_searchController.text);
+    }
+    // Only auto-scroll when the playing chunk actually changes.
+    if (widget.state.currentChunkIndex != oldWidget.state.currentChunkIndex) {
+      _maybeScrollToCurrent();
+    }
   }
 
   @override
   void initState() {
     super.initState();
-    _syncKeys();
-  }
-
-  void _syncKeys() {
-    final needed = widget.state.chunks.length;
-    while (_keys.length < needed) {
-      _keys.add(GlobalKey());
-    }
-    if (_keys.length > needed) _keys.removeRange(needed, _keys.length);
   }
 
   void _maybeScrollToCurrent({bool force = false}) {
     final idx = widget.state.currentChunkIndex;
     if (!force && idx == _lastScrolledIndex) return;
-    if (_keys.isEmpty || idx >= _keys.length) return;
-    // Schedule after the frame so the item is laid out.
+    if (widget.state.chunks.isEmpty || idx >= widget.state.chunks.length) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final key = _keys[idx];
-      final ctx = key.currentContext;
-      if (ctx != null) {
-        _lastScrolledIndex = idx;
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          alignment: 0.3, // place item ~30% from top
-        );
-      }
+      if (!mounted) return;
+      _scrollToIndex(idx, animated: true);
     });
+  }
+
+  void _scrollToIndex(int idx, {required bool animated}) {
+    if (!_itemScrollController.isAttached) return;
+    if (idx < 0 || idx >= widget.state.chunks.length) return;
+
+    _lastScrolledIndex = idx;
+    if (animated) {
+      _itemScrollController.scrollTo(
+        index: idx,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeInOut,
+        alignment: 0.3,
+      );
+    } else {
+      _itemScrollController.jumpTo(index: idx, alignment: 0.3);
+    }
+  }
+
+  void _rebuildSearchMatches(String query) {
+    final normalized = query.trim().toLowerCase();
+    final queryChanged = normalized != _lastSearchQuery;
+    _lastSearchQuery = normalized;
+
+    _searchMatches.clear();
+    if (normalized.isEmpty) {
+      if (queryChanged) _searchMatchPos = -1;
+      if (mounted) setState(() {});
+      return;
+    }
+
+    for (var i = 0; i < widget.state.chunks.length; i++) {
+      if (widget.state.chunks[i].toLowerCase().contains(normalized)) {
+        _searchMatches.add(i);
+      }
+    }
+
+    if (queryChanged) {
+      // User typed a new query — reset position to first match at/after current chunk.
+      if (_searchMatches.isNotEmpty) {
+        final current = widget.state.currentChunkIndex;
+        final firstAtOrAfter = _searchMatches.indexWhere((i) => i >= current);
+        _searchMatchPos = firstAtOrAfter >= 0 ? firstAtOrAfter : 0;
+      } else {
+        _searchMatchPos = -1;
+      }
+    } else {
+      // State changed (chunk advanced) but query is the same — keep position, just clamp.
+      _searchMatchPos = _searchMatchPos.clamp(-1, _searchMatches.length - 1);
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _goToSearchMatch({required bool forward}) async {
+    if (_searchMatches.isEmpty) return;
+    if (_searchMatchPos < 0) {
+      _searchMatchPos = 0;
+    } else {
+      final delta = forward ? 1 : -1;
+      _searchMatchPos =
+          (_searchMatchPos + delta + _searchMatches.length) %
+          _searchMatches.length;
+    }
+
+    final idx = _searchMatches[_searchMatchPos];
+    await widget.state.seekToChunk(idx);
+    _scrollToIndex(idx, animated: true);
+    if (mounted) setState(() {});
   }
 
   Future<void> _jumpToCurrent() async {
     final idx = widget.state.currentChunkIndex;
-    if (_keys.isEmpty || idx >= _keys.length) return;
+    _scrollToIndex(idx, animated: true);
+  }
 
-    for (var attempt = 0; attempt < 3; attempt++) {
-      _maybeScrollToCurrent(force: true);
-      await Future<void>.delayed(const Duration(milliseconds: 70));
-
-      if (_keys[idx].currentContext != null) return;
-      if (!_scroll.hasClients) return;
-
-      final max = _scroll.position.maxScrollExtent;
-      final fraction = widget.state.chunks.length <= 1
-          ? 0.0
-          : idx / (widget.state.chunks.length - 1);
-      final target = (max * fraction).clamp(0.0, max);
-
-      await _scroll.animateTo(
-        target,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-      );
+  TextSpan _buildChunkSpan(
+    BuildContext context,
+    String chunk,
+    bool isCurrent,
+  ) {
+    final query = _searchController.text.trim();
+    final baseStyle = TextStyle(
+      fontSize: 17,
+      height: 1.6,
+      color: Theme.of(context).colorScheme.onSurface.withValues(
+        alpha: isCurrent ? 1.0 : 0.75,
+      ),
+    );
+    if (query.isEmpty) {
+      return TextSpan(text: chunk, style: baseStyle);
     }
 
-    _maybeScrollToCurrent(force: true);
+    final lowerChunk = chunk.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    var start = 0;
+
+    while (true) {
+      final found = lowerChunk.indexOf(lowerQuery, start);
+      if (found < 0) {
+        spans.add(TextSpan(text: chunk.substring(start), style: baseStyle));
+        break;
+      }
+      if (found > start) {
+        spans.add(
+          TextSpan(text: chunk.substring(start, found), style: baseStyle),
+        );
+      }
+      spans.add(
+        TextSpan(
+          text: chunk.substring(found, found + query.length),
+          style: baseStyle.copyWith(
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.tertiary.withValues(alpha: 0.35),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+      start = found + query.length;
+    }
+
+    return TextSpan(children: spans, style: baseStyle);
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -347,11 +437,63 @@ class _ContentAreaState extends State<_ContentArea> {
       );
     }
 
-    _syncKeys();
-    _maybeScrollToCurrent();
-
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 2, 10, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    hintText: 'Search in book',
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () {
+                              _searchController.clear();
+                              _rebuildSearchMatches('');
+                            },
+                          ),
+                  ),
+                  textInputAction: TextInputAction.search,
+                  onChanged: _rebuildSearchMatches,
+                  onSubmitted: (_) => _goToSearchMatch(forward: true),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Previous match',
+                onPressed: _searchMatches.isEmpty
+                    ? null
+                    : () => _goToSearchMatch(forward: false),
+                icon: const Icon(Icons.keyboard_arrow_up),
+              ),
+              IconButton(
+                tooltip: 'Next match',
+                onPressed: _searchMatches.isEmpty
+                    ? null
+                    : () => _goToSearchMatch(forward: true),
+                icon: const Icon(Icons.keyboard_arrow_down),
+              ),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  _searchMatches.isEmpty
+                      ? '0/0'
+                      : '${_searchMatchPos + 1}/${_searchMatches.length}',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
         Align(
           alignment: Alignment.centerRight,
           child: Padding(
@@ -373,14 +515,14 @@ class _ContentAreaState extends State<_ContentArea> {
         Expanded(
           child: DossierPanel(
             padding: const EdgeInsets.all(10),
-            child: ListView.builder(
-              controller: _scroll,
+            child: ScrollablePositionedList.builder(
+              itemScrollController: _itemScrollController,
+              itemPositionsListener: _itemPositionsListener,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               itemCount: state.chunks.length,
               itemBuilder: (context, index) {
                 final isCurrent = index == state.currentChunkIndex;
                 return GestureDetector(
-                  key: _keys[index],
                   onTap: () => state.seekAndPlay(index),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
@@ -394,14 +536,11 @@ class _ContentAreaState extends State<_ContentArea> {
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      state.chunks[index],
-                      style: TextStyle(
-                        fontSize: 17,
-                        height: 1.6,
-                        color: isCurrent
-                            ? Theme.of(context).colorScheme.onSurface
-                            : null,
+                    child: RichText(
+                      text: _buildChunkSpan(
+                        context,
+                        state.chunks[index],
+                        isCurrent,
                       ),
                     ),
                   ),
@@ -631,9 +770,9 @@ class _PlaybackBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPlaying = state.playbackStatus == PlaybackStatus.playing;
-    final isPaused = state.playbackStatus == PlaybackStatus.paused;
-    final isLoading = state.playbackStatus == PlaybackStatus.loading;
+    final liveStatus = state.livePlaybackStatus;
+    final isPlaying = liveStatus == PlaybackStatus.playing;
+    final isLoading = liveStatus == PlaybackStatus.loading;
     final canPlay = state.chunks.isNotEmpty;
 
     return SafeArea(
@@ -674,17 +813,7 @@ class _PlaybackBar extends StatelessWidget {
                 : IconButton(
                     iconSize: 40,
                     icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                    onPressed: canPlay
-                        ? () {
-                            if (isPlaying) {
-                              state.pause();
-                            } else if (isPaused) {
-                              state.resume();
-                            } else {
-                              state.play();
-                            }
-                          }
-                        : null,
+                    onPressed: canPlay ? state.togglePlayPause : null,
                   ),
             // Next
             IconButton(

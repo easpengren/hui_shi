@@ -29,3 +29,11 @@
 - Added explicit text color and dropdownColor to all voice pickers so they read correctly in light mode.
 - Added dark mode SwitchListTile to Settings; dark mode toggle remains in AppBar too.
 - NOTE: adb uninstall wiped library during this session. Always use adb install -r going forward.
+
+## 2026-05-04
+- Reworked reader navigation to index-based scrolling using scrollable_positioned_list; Current button and search next/prev now jump reliably to target chunks.
+- Fixed chunk text readability in light theme by forcing explicit onSurface-based text color in RichText spans.
+- Persisted and restored selected TTS engine and Piper voice across app restarts.
+- Hardened playback controls: toggle now uses live controller status, play anchors from the current chunk when idle, and early-init access no longer crashes UI.
+- Stabilized widget smoke test harness (provider path + viewport setup); flutter test now passes.
+- Known-good debug build validated on device after install: current/search/play-pause/voice persistence behaviors verified.

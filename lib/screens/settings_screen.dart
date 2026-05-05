@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/tts_engine.dart';
-import '../playback/playback_controller.dart';
 import '../state/reader_state.dart';
 import '../widgets/classical_chrome.dart';
 

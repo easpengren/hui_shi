@@ -21,6 +21,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   late final PiperTtsClient _piper;
   late final SystemTtsClient _system;
   late final PlaybackController _playback;
+  late final Future<void> _ready;
+  bool _playbackReady = false;
 
   // ── State ─────────────────────────────────────────────────────────────────
   LoadState loadState = LoadState.idle;
@@ -54,7 +56,11 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
 
   ReaderState() {
     WidgetsBinding.instance.addObserver(this);
-    _init();
+    _ready = _init();
+  }
+
+  Future<void> _ensureReady() async {
+    await _ready;
   }
 
   @override
@@ -77,13 +83,19 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     }
     await prefs.setBool('speedMigratedV3', true);
 
-    _piper = await PiperTtsClient.create(
-      voice: selectedVoice,
-      speed: playbackSpeed,
-    );
+    // selectedVoice may be updated below before _piper is created, so defer
+    // until after prefs are read. Use a temporary late-init sequence.
     _system = SystemTtsClient();
-    _playback = PlaybackController(piper: _piper, system: _system);
-    _playback.setSpeed(playbackSpeed);
+    // _piper and _playback initialised after prefs are loaded (see below).
+
+    final savedEngine = prefs.getString('selectedEngine');
+    if (savedEngine != null) {
+      selectedEngine = TtsEngine.values.firstWhere(
+        (e) => e.name == savedEngine,
+        orElse: () => TtsEngine.system,
+      );
+    }
+    selectedVoice = prefs.getString('selectedPiperVoice') ?? selectedVoice;
 
     selectedSystemVoiceName = prefs.getString('systemVoiceName') ?? '';
     selectedSystemVoiceLocale = prefs.getString('systemVoiceLocale') ?? '';
@@ -94,6 +106,15 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
     await _loadSystemVoices();
+
+    _piper = await PiperTtsClient.create(
+      voice: selectedVoice,
+      speed: playbackSpeed,
+    );
+    _playback = PlaybackController(piper: _piper, system: _system);
+    _playback.setSpeed(playbackSpeed);
+    _playback.setEngine(selectedEngine);
+    _playbackReady = true;
 
     _statusSub = _playback.statusStream.listen((s) {
       playbackStatus = s;
@@ -224,6 +245,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     loadStatus = 'Preparing text...';
     notifyListeners();
 
+    await _ensureReady();
     await _playback.stop();
 
     bookId = existingId ?? const Uuid().v4();
@@ -317,6 +339,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       currentChunkIndex = newIndex;
 
       if (canReloadPlayback) {
+        await _ensureReady();
         await _playback.load(bookId, chunks, startIndex: currentChunkIndex);
         _playback.setEngine(selectedEngine);
         _playback.setSpeed(playbackSpeed);
@@ -379,21 +402,66 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   // ── Playback controls ─────────────────────────────────────────────────────
 
   Future<void> play() async {
+    await _ensureReady();
     if (selectedEngine == TtsEngine.piper && !piperModelDownloaded) {
       downloadStatus = 'Download the selected Piper voice before playback.';
       notifyListeners();
       return;
     }
+
+    // Anchor playback to the UI-visible chunk before starting from idle.
+    if (_playback.status == PlaybackStatus.idle && chunks.isNotEmpty) {
+      await _playback.seekToChunk(currentChunkIndex);
+    }
+
     await _playback.play();
   }
 
-  Future<void> pause() => _playback.pause();
-  Future<void> resume() => _playback.resume();
-  Future<void> stop() => _playback.stop();
-  Future<void> seekToChunk(int index) => _playback.seekToChunk(index);
+  Future<void> pause() async {
+    await _ensureReady();
+    await _playback.pause();
+  }
+
+  Future<void> resume() async {
+    await _ensureReady();
+    await _playback.resume();
+  }
+
+  Future<void> stop() async {
+    await _ensureReady();
+    await _playback.stop();
+  }
+
+  Future<void> seekToChunk(int index) async {
+    await _ensureReady();
+    await _playback.seekToChunk(index);
+  }
+
+  PlaybackStatus get livePlaybackStatus =>
+      _playbackReady ? _playback.status : playbackStatus;
+
+  Future<void> togglePlayPause() async {
+    await _ensureReady();
+    if (chunks.isEmpty) return;
+
+    final status = _playback.status;
+    if (status == PlaybackStatus.loading) {
+      await _playback.stop();
+    } else if (status == PlaybackStatus.playing) {
+      await _playback.pause();
+    } else if (status == PlaybackStatus.paused) {
+      await _playback.resume();
+    } else {
+      await play();
+    }
+
+    playbackStatus = _playback.status;
+    notifyListeners();
+  }
 
   /// Seek to [index] and immediately start playing from there.
   Future<void> seekAndPlay(int index) async {
+    await _ensureReady();
     await _playback.seekToChunk(index);
     await _playback.play();
   }
@@ -546,6 +614,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setSystemVoice(String name, String locale) async {
+    await _ensureReady();
     await _playback.stop();
     selectedSystemVoiceName = name;
     selectedSystemVoiceLocale = locale;
@@ -563,6 +632,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setEngine(TtsEngine engine) async {
+    await _ensureReady();
     if (selectedEngine == engine) return;
 
     // Ensure we fully leave the previous engine before switching. Without this,
@@ -571,6 +641,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     selectedEngine = engine;
     piperModelDownloaded = _piper.isModelDownloaded(selectedVoice);
     _playback.setEngine(engine);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selectedEngine', engine.name);
 
     if (engine == TtsEngine.piper && !piperModelDownloaded) {
       downloadStatus =
@@ -587,14 +659,18 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setVoice(String voice) async {
+    await _ensureReady();
     await _playback.stop();
     selectedVoice = voice;
     _piper.setVoice(voice);
     piperModelDownloaded = _piper.isModelDownloaded(voice);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selectedPiperVoice', voice);
     notifyListeners();
   }
 
   Future<void> setSpeed(double speed) async {
+    await _ensureReady();
     playbackSpeed = speed;
     _playback.setSpeed(speed);
     final prefs = await SharedPreferences.getInstance();
@@ -705,7 +781,9 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     _statusSub?.cancel();
     _chunkSub?.cancel();
     _errorSub?.cancel();
-    _playback.dispose();
+    if (_playbackReady) {
+      _playback.dispose();
+    }
     super.dispose();
   }
 }
