@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../models/book.dart';
 import '../models/document.dart';
 import '../models/tts_engine.dart';
+import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
 import '../services/file_reader_service.dart';
@@ -49,10 +50,14 @@ class ReaderState extends ChangeNotifier {
 
   List<LibraryEntry> library = [];
 
+  // System media session (lock screen / notification / headset controls).
+  final LuJiAudioHandler _handler;
+  int _lastNotifiedChapter = -1;
+
   StreamSubscription<PlaybackStatus>? _statusSub;
   StreamSubscription<ChunkEvent>? _chunkSub;
 
-  ReaderState() {
+  ReaderState(this._handler) {
     _init();
   }
 
@@ -64,12 +69,26 @@ class ReaderState extends ChangeNotifier {
     _system = SystemTtsClient();
     _playback = PlaybackController(piper: _piper, system: _system);
 
+    // System-media controls drive the same playback.
+    _handler.onPlay = () =>
+        playbackStatus == PlaybackStatus.paused ? resume() : play();
+    _handler.onPause = pause;
+    _handler.onNext = nextChapter;
+    _handler.onPrevious = prevChapter;
+    _handler.onStop = () => _playback.stop();
+
     _statusSub = _playback.statusStream.listen((s) {
       playbackStatus = s;
+      _handler.setPlaying(s == PlaybackStatus.playing,
+          idle: s == PlaybackStatus.idle);
       notifyListeners();
     });
     _chunkSub = _playback.chunkStream.listen((e) {
       currentChunkIndex = e.index;
+      if (currentChapterIndex != _lastNotifiedChapter) {
+        _lastNotifiedChapter = currentChapterIndex;
+        _handler.setNowPlaying(book: title, chapter: currentChapterTitle);
+      }
       _saveProgress();
       notifyListeners();
     });
@@ -176,6 +195,8 @@ class ReaderState extends ChangeNotifier {
     await _library.save(entry);
     await _loadLibrary();
 
+    _lastNotifiedChapter = currentChapterIndex;
+    _handler.setNowPlaying(book: title, chapter: currentChapterTitle);
     loadState = LoadState.ready;
     notifyListeners();
   }

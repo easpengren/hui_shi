@@ -1,5 +1,7 @@
 package com.example.lu_ji
 
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 
-class MainActivity : FlutterActivity()
+// AudioServiceActivity (not FlutterActivity) so audio_service's media session
+// binds correctly for lock-screen / notification / headset controls.
+class MainActivity : AudioServiceActivity()

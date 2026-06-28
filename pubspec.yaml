@@ -42,6 +42,7 @@ dependencies:
   google_fonts: ^8.1.0
   package_info_plus: ^9.0.1
   ota_update: ^7.1.0
+  audio_service: ^0.18.18
 
 dev_dependencies:
   flutter_test:

@@ -4,8 +4,9 @@
     <!-- Read files from external storage (Android < 13) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
-    <!-- Audio focus / media playback -->
+    <!-- Audio focus / media playback (audio_service media session) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <!-- Self-update: install the downloaded APK via the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
@@ -40,6 +41,22 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- audio_service: media session (lock screen / notification / headset). -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
         <!-- ota_update (in-app self-update): its FileProvider + install-result
              receiver. Required by the plugin in 7.x — without the provider,
              FileProvider.getUriForFile crashes at install time. -->
