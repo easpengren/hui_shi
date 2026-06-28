@@ -332,13 +332,25 @@ class _ReaderBar extends StatelessWidget {
               onPressed: hasNext ? state.nextChapter : null,
             ),
             const Spacer(),
-            Text('${(state.progress * 100).round()}%',
-                style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(width: 8),
+            // Speed lives in the bar — a small menu, applied live (changing it
+            // restarts the current sentence), so it never covers the controls.
+            PopupMenuButton<double>(
+              tooltip: 'Speed',
+              initialValue: state.playbackSpeed,
+              onSelected: state.setSpeed,
+              itemBuilder: (_) => [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+                  .map((s) => PopupMenuItem(value: s, child: Text(_spd(s))))
+                  .toList(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Text(_spd(state.playbackSpeed),
+                    style: Theme.of(context).textTheme.titleSmall),
+              ),
+            ),
             IconButton(
-              icon: const Icon(Icons.headphones_outlined),
-              tooltip: 'Voice & speed',
-              onPressed: () => _showVoiceSheet(context, state),
+              icon: const Icon(Icons.record_voice_over_outlined),
+              tooltip: 'Voice',
+              onPressed: () => _showVoiceDialog(context, state),
             ),
           ],
         ),
@@ -346,20 +358,22 @@ class _ReaderBar extends StatelessWidget {
     );
   }
 
-  void _showVoiceSheet(BuildContext context, ReaderState state) {
-    showModalBottomSheet<void>(
+  static String _spd(double s) => '${s % 1 == 0 ? s.toInt() : s}×';
+
+  // A centered dialog (not a bottom sheet) so it never covers the play bar.
+  // Speed isn't here — it's inline in the bar now.
+  void _showVoiceDialog(BuildContext context, ReaderState state) {
+    showDialog<void>(
       context: context,
       builder: (_) => StatefulBuilder(
-        builder: (context, setSheet) {
+        builder: (context, setDialog) {
           final tt = Theme.of(context).textTheme;
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-            child: Column(
+          return AlertDialog(
+            title: const Text('Read aloud'),
+            content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Read aloud', style: tt.titleMedium),
-                const SizedBox(height: 12),
                 SegmentedButton<TtsEngine>(
                   segments: TtsEngine.values
                       .map((e) => ButtonSegment(value: e, label: Text(e.displayName)))
@@ -367,31 +381,11 @@ class _ReaderBar extends StatelessWidget {
                   selected: {state.selectedEngine},
                   onSelectionChanged: (s) {
                     state.setEngine(s.first);
-                    setSheet(() {});
+                    setDialog(() {});
                   },
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Text('Speed'),
-                    Expanded(
-                      child: Slider(
-                        value: state.playbackSpeed,
-                        min: 0.5,
-                        max: 2.0,
-                        divisions: 6,
-                        label: '${state.playbackSpeed.toStringAsFixed(1)}×',
-                        onChanged: (v) {
-                          state.setSpeed(v);
-                          setSheet(() {});
-                        },
-                      ),
-                    ),
-                    Text('${state.playbackSpeed.toStringAsFixed(1)}×'),
-                  ],
-                ),
                 if (state.selectedEngine == TtsEngine.piper) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   DropdownButton<String>(
                     value: state.selectedVoice,
                     isExpanded: true,
@@ -401,7 +395,7 @@ class _ReaderBar extends StatelessWidget {
                     onChanged: (v) {
                       if (v != null) {
                         state.setVoice(v);
-                        setSheet(() {});
+                        setDialog(() {});
                       }
                     },
                   ),
@@ -420,7 +414,7 @@ class _ReaderBar extends StatelessWidget {
                           : OutlinedButton.icon(
                               onPressed: () async {
                                 await state.downloadPiperModel();
-                                setSheet(() {});
+                                setDialog(() {});
                               },
                               icon: const Icon(Icons.download),
                               label: Text('Download ${state.selectedVoice}'),
@@ -429,6 +423,12 @@ class _ReaderBar extends StatelessWidget {
                 ],
               ],
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done'),
+              ),
+            ],
           );
         },
       ),

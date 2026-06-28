@@ -292,6 +292,12 @@ class ReaderState extends ChangeNotifier {
     playbackSpeed = speed;
     _playback.setSpeed(speed);
     notifyListeners();
+    // Apply it to what's playing now — an engine can't retune a sentence
+    // mid-flight, so restart the current chunk at the new speed.
+    if (playbackStatus == PlaybackStatus.playing) {
+      await _playback.seekToChunk(currentChunkIndex);
+      await _playback.play();
+    }
   }
 
   // ── Piper model download ──────────────────────────────────────────────────
