@@ -56,7 +56,7 @@ class _EmptyState extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => Navigator.pushNamed(context, '/library'),
+                onPressed: () => Navigator.maybePop(context),
                 child: const Text('Library'),
               ),
             ],
@@ -122,7 +122,7 @@ class _ReaderViewState extends State<_ReaderView> {
         leading: IconButton(
           icon: const Icon(Icons.local_library_outlined),
           tooltip: 'Library',
-          onPressed: () => Navigator.pushNamed(context, '/library'),
+          onPressed: () => Navigator.maybePop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

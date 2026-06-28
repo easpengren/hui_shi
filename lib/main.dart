@@ -27,8 +27,8 @@ class LuJiApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       initialRoute: '/',
       routes: {
-        '/': (_) => const ReaderScreen(),
-        '/library': (_) => const LibraryScreen(),
+        '/': (_) => const LibraryScreen(),
+        '/reader': (_) => const ReaderScreen(),
       },
     );
   }
