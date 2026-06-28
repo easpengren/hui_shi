@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/book.dart';
+import '../models/document.dart';
 import '../models/tts_engine.dart';
 import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
@@ -30,6 +31,13 @@ class ReaderState extends ChangeNotifier {
   String rawText = '';
   List<String> chunks = [];
   int currentChunkIndex = 0;
+
+  // Chapter structure laid over the flat chunk list: chapters[i] spans the
+  // chunks [chapterChunkStarts[i], chapterChunkStarts[i+1]). TTS stays
+  // continuous over `chunks`; the reader works one chapter at a time.
+  List<Chapter> chapters = [];
+  List<int> chapterChunkStarts = [];
+  double fontScale = 1.0;
   PlaybackStatus playbackStatus = PlaybackStatus.idle;
   TtsEngine selectedEngine = TtsEngine.system;
   String selectedVoice = kDefaultPiperVoice;
@@ -131,8 +139,22 @@ class ReaderState extends ChangeNotifier {
 
     bookId = existingId ?? const Uuid().v4();
     title = result.title;
-    rawText = cleanText(result.content);
-    chunks = chunkText(rawText);
+    rawText = result.content;
+    chapters = result.chapters;
+
+    // Chunk each chapter and record where it begins in the flat chunk list.
+    chunks = [];
+    chapterChunkStarts = [];
+    for (final ch in chapters) {
+      chapterChunkStarts.add(chunks.length);
+      chunks.addAll(chunkText(cleanText(ch.text)));
+    }
+    if (chunks.isEmpty) {
+      chunks = chunkText(cleanText(result.content));
+      chapterChunkStarts = [0];
+      chapters = [Chapter(title: title, paragraphs: chunks)];
+    }
+
     currentChunkIndex = startChunk.clamp(
       0,
       chunks.isEmpty ? 0 : chunks.length - 1,
@@ -191,6 +213,66 @@ class ReaderState extends ChangeNotifier {
   Future<void> seekAndPlay(int index) async {
     await _playback.seekToChunk(index);
     await _playback.play();
+  }
+
+  // ── Chapters ──────────────────────────────────────────────────────────────
+
+  /// The chapter that contains the currently-active chunk.
+  int get currentChapterIndex {
+    var idx = 0;
+    for (var i = 0; i < chapterChunkStarts.length; i++) {
+      if (currentChunkIndex >= chapterChunkStarts[i]) {
+        idx = i;
+      } else {
+        break;
+      }
+    }
+    return idx;
+  }
+
+  int get _chapterStart =>
+      chapterChunkStarts.isEmpty ? 0 : chapterChunkStarts[currentChapterIndex];
+
+  int get _chapterEnd {
+    final next = currentChapterIndex + 1;
+    return next < chapterChunkStarts.length
+        ? chapterChunkStarts[next]
+        : chunks.length;
+  }
+
+  /// The chunks of the chapter being read — these are both the reading units and
+  /// the TTS units, so the highlight is always exactly what's being spoken.
+  List<String> get currentChapterChunks =>
+      chunks.isEmpty ? const [] : chunks.sublist(_chapterStart, _chapterEnd);
+
+  /// Index (within the current chapter) of the active chunk, or -1 if elsewhere.
+  int get activeChunkInChapter {
+    final local = currentChunkIndex - _chapterStart;
+    return (local >= 0 && local < currentChapterChunks.length) ? local : -1;
+  }
+
+  String get currentChapterTitle =>
+      currentChapterIndex < chapters.length ? chapters[currentChapterIndex].title : '';
+
+  double get progress =>
+      chunks.isEmpty ? 0 : (currentChunkIndex + 1) / chunks.length;
+
+  Future<void> goToChapter(int index) async {
+    if (index < 0 || index >= chapterChunkStarts.length) return;
+    await seekToChunk(chapterChunkStarts[index]);
+  }
+
+  Future<void> nextChapter() => goToChapter(currentChapterIndex + 1);
+  Future<void> prevChapter() => goToChapter(currentChapterIndex - 1);
+
+  /// Seek to a chunk by its position WITHIN the current chapter and play (used by
+  /// tap-to-read in the reader view).
+  Future<void> playChapterChunk(int localIndex) =>
+      seekAndPlay(_chapterStart + localIndex);
+
+  void setFontScale(double scale) {
+    fontScale = scale.clamp(0.8, 1.8);
+    notifyListeners();
   }
 
   Future<void> setEngine(TtsEngine engine) async {
