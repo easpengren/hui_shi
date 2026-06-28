@@ -22,10 +22,27 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _openBook(ReaderState state, Future<void> Function() load) async {
-    await load();
-    if (state.chunks.isNotEmpty && mounted) {
-      Navigator.pushNamed(context, '/reader');
+    try {
+      await load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open this book: $e')),
+        );
+      }
+      return;
     }
+    if (!mounted) return;
+    if (state.loadState == LoadState.error || state.chunks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(state.errorMessage ??
+              'Could not open this book — the file may have moved or been deleted.'),
+        ),
+      );
+      return;
+    }
+    Navigator.pushNamed(context, '/reader');
   }
 
   @override

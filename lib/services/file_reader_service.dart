@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:epubx/epubx.dart';
 
@@ -36,7 +37,25 @@ class FileReaderService {
       allowedExtensions: ['txt', 'pdf', 'epub'],
     );
     if (picked == null || picked.files.single.path == null) return null;
-    return _readFromPath(picked.files.single.path!);
+    // Android's picker often returns a disposable cache path that's gone by the
+    // next launch — so the library could never reopen the book. Copy it into the
+    // app's own storage and use that durable path instead.
+    final durablePath = await _persist(picked.files.single.path!);
+    return _readFromPath(durablePath);
+  }
+
+  /// Copy a picked file into the app's documents dir so its path survives.
+  Future<String> _persist(String srcPath) async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${docs.path}/books')
+        ..createSync(recursive: true);
+      final dest = '${booksDir.path}/${srcPath.split('/').last}';
+      if (dest != srcPath) await File(srcPath).copy(dest);
+      return dest;
+    } catch (_) {
+      return srcPath; // fall back to the original path if the copy fails
+    }
   }
 
   /// Re-read a file that is already on-device (e.g. from the library).
