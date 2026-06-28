@@ -18,10 +18,15 @@ class SystemTtsClient {
   bool _initialized = false;
   double _speed = 1.0;
 
+  /// Map the user-facing speed (1.0 = natural) to a flutter_tts speech rate.
+  /// On Android the engine's rate runs 0.0–1.0 where ~0.5 is natural speech and
+  /// 1.0 is near-max — so feeding the raw 1.0 made the default read frantically.
+  double _rateFor(double speed) => (speed * 0.5).clamp(0.05, 1.0);
+
   Future<void> init() async {
     if (!_supported || _initialized) return;
     await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(1.0);
+    await _tts.setSpeechRate(_rateFor(_speed));
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
     _initialized = true;
@@ -29,7 +34,7 @@ class SystemTtsClient {
 
   Future<void> setSpeed(double speed) async {
     _speed = speed;
-    if (_initialized) await _tts.setSpeechRate(speed);
+    if (_initialized) await _tts.setSpeechRate(_rateFor(speed));
   }
 
   /// Returns a list of available voice maps [{'name': ..., 'locale': ...}].
@@ -59,7 +64,7 @@ class SystemTtsClient {
   Future<void> speak(String text) async {
     if (!_supported) return; // no-op on Linux/Windows
     await init();
-    await _tts.setSpeechRate(_speed);
+    await _tts.setSpeechRate(_rateFor(_speed));
     final completer = Completer<void>();
     _tts.setCompletionHandler(() {
       if (!completer.isCompleted) completer.complete();
