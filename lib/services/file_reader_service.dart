@@ -3,20 +3,28 @@ import 'package:file_picker/file_picker.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:epubx/epubx.dart';
 
+import '../models/document.dart';
+
 enum SupportedFileType { txt, pdf, epub }
 
 class FileReadResult {
   final String path;
   final String title;
-  final String content;
+
+  /// The document with its chapter structure preserved.
+  final List<Chapter> chapters;
   final SupportedFileType type;
 
   const FileReadResult({
     required this.path,
     required this.title,
-    required this.content,
+    required this.chapters,
     required this.type,
   });
+
+  /// Flattened plain text — bridge for the existing TTS chunking path while the
+  /// reader is migrated to render chapters directly.
+  String get content => chapters.map((c) => c.text).join('\n\n');
 }
 
 class FileReaderService {
@@ -43,27 +51,26 @@ class FileReaderService {
 
     switch (ext) {
       case 'txt':
-        final content = await File(path).readAsString();
+        final raw = await File(path).readAsString();
         return FileReadResult(
           path: path,
           title: titleFromFilename,
-          content: content,
+          chapters: [Chapter(title: titleFromFilename, paragraphs: _splitParagraphs(raw))],
           type: SupportedFileType.txt,
         );
       case 'pdf':
-        final content = await _extractPdf(path);
         return FileReadResult(
           path: path,
           title: titleFromFilename,
-          content: content,
+          chapters: await _extractPdf(path),
           type: SupportedFileType.pdf,
         );
       case 'epub':
-        final (title, content) = await _extractEpub(path);
+        final (title, chapters) = await _extractEpub(path);
         return FileReadResult(
           path: path,
           title: title.isNotEmpty ? title : titleFromFilename,
-          content: content,
+          chapters: chapters,
           type: SupportedFileType.epub,
         );
       default:
@@ -71,46 +78,77 @@ class FileReaderService {
     }
   }
 
-  Future<String> _extractPdf(String path) async {
+  // ── PDF ─────────────────────────────────────────────────────────────────────
+  // No reliable chapter structure in raw PDF text, so v1 is a single chapter
+  // whose paragraphs come from every page (page chaptering is a later refinement).
+  Future<List<Chapter>> _extractPdf(String path) async {
     final doc = await PdfDocument.openFile(path);
-    final buffer = StringBuffer();
-    for (var i = 1; i <= doc.pages.length; i++) {
-      final page = doc.pages[i - 1];
-      final pageText = await page.loadText();
-      buffer.writeln(pageText.fullText);
+    final paragraphs = <String>[];
+    for (var i = 0; i < doc.pages.length; i++) {
+      final pageText = (await doc.pages[i].loadText()).fullText;
+      paragraphs.addAll(_splitParagraphs(pageText));
     }
-    return buffer.toString();
+    return [Chapter(title: 'Full text', paragraphs: paragraphs)];
   }
 
-  Future<(String, String)> _extractEpub(String path) async {
+  // ── EPUB ────────────────────────────────────────────────────────────────────
+  Future<(String, List<Chapter>)> _extractEpub(String path) async {
     final bytes = await File(path).readAsBytes();
     final book = await EpubReader.readBook(bytes);
     final title = book.Title ?? '';
-    final buffer = StringBuffer();
-    if (book.Chapters != null) {
-      for (final chapter in book.Chapters!) {
-        _appendChapter(chapter, buffer);
+    final chapters = <Chapter>[];
+
+    void walk(EpubChapter ch) {
+      final paragraphs =
+          ch.HtmlContent != null ? _htmlToParagraphs(ch.HtmlContent!) : const <String>[];
+      if (paragraphs.isNotEmpty) {
+        final t = (ch.Title ?? '').trim();
+        chapters.add(Chapter(
+          title: t.isNotEmpty ? t : 'Chapter ${chapters.length + 1}',
+          paragraphs: paragraphs,
+        ));
+      }
+      for (final sub in ch.SubChapters ?? const <EpubChapter>[]) {
+        walk(sub);
       }
     }
-    return (title, buffer.toString());
+
+    for (final ch in book.Chapters ?? const <EpubChapter>[]) {
+      walk(ch);
+    }
+    return (title, chapters);
   }
 
-  void _appendChapter(EpubChapter chapter, StringBuffer buffer) {
-    if (chapter.HtmlContent != null) {
-      final text = chapter.HtmlContent!
-          .replaceAll(RegExp(r'<[^>]+>'), ' ')
-          .replaceAll('&nbsp;', ' ')
-          .replaceAll('&amp;', '&')
-          .replaceAll('&lt;', '<')
-          .replaceAll('&gt;', '>')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      if (text.isNotEmpty) buffer.writeln(text);
-    }
-    if (chapter.SubChapters != null) {
-      for (final sub in chapter.SubChapters!) {
-        _appendChapter(sub, buffer);
-      }
-    }
+  /// Turn an HTML chapter body into paragraphs: insert breaks at block
+  /// boundaries, strip remaining tags, decode entities, drop empties.
+  List<String> _htmlToParagraphs(String html) {
+    final withBreaks = html.replaceAll(
+      RegExp(r'<\s*(br|/p|/div|/h[1-6]|/li|/blockquote)[^>]*>', caseSensitive: false),
+      '\n\n',
+    );
+    final stripped = withBreaks.replaceAll(RegExp(r'<[^>]+>'), ' ');
+    return _splitParagraphs(_decodeEntities(stripped));
   }
+
+  /// Split on blank lines into trimmed, whitespace-normalised paragraphs.
+  List<String> _splitParagraphs(String text) => text
+      .split(RegExp(r'\n\s*\n'))
+      .map((p) => p.replaceAll(RegExp(r'[ \t]+'), ' ').replaceAll(RegExp(r'\s*\n\s*'), ' ').trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
+
+  String _decodeEntities(String s) => s
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&rsquo;', "’")
+      .replaceAll('&lsquo;', "‘")
+      .replaceAll('&rdquo;', "”")
+      .replaceAll('&ldquo;', "“")
+      .replaceAll('&mdash;', "—")
+      .replaceAll('&ndash;', "–")
+      .replaceAll('&hellip;', "…");
 }
