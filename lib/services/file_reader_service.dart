@@ -5,6 +5,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:epubx/epubx.dart';
 
 import '../models/document.dart';
+import 'pdf_reflow.dart';
 
 enum SupportedFileType { txt, pdf, epub }
 
@@ -98,16 +99,52 @@ class FileReaderService {
   }
 
   // ── PDF ─────────────────────────────────────────────────────────────────────
-  // No reliable chapter structure in raw PDF text, so v1 is a single chapter
-  // whose paragraphs come from every page (page chaptering is a later refinement).
+  // PDF has no paragraph structure — just positioned text. We read pdfrx's text
+  // fragments WITH their coordinates, group them into visual lines, detect
+  // running headers/footers across pages, then reflow each page's lines into
+  // real paragraphs using vertical gaps / indentation / font-size (see
+  // pdf_reflow.dart). Each page becomes its own navigable section ("Page N").
   Future<List<Chapter>> _extractPdf(String path) async {
     final doc = await PdfDocument.openFile(path);
-    final paragraphs = <String>[];
-    for (var i = 0; i < doc.pages.length; i++) {
-      final pageText = (await doc.pages[i].loadText()).fullText;
-      paragraphs.addAll(_splitParagraphs(pageText));
+    try {
+      final pageLines = <List<PdfLine>>[];
+      for (var i = 0; i < doc.pages.length; i++) {
+        final text = await doc.pages[i].loadText();
+        final frags = [
+          for (final f in text.fragments)
+            PdfFragment(
+              f.text,
+              f.bounds.left,
+              f.bounds.top,
+              f.bounds.right,
+              f.bounds.bottom,
+            ),
+        ];
+        pageLines.add(groupFragmentsIntoLines(frags));
+      }
+      final running = detectRunningHeaders(pageLines);
+
+      final chapters = <Chapter>[];
+      for (var i = 0; i < pageLines.length; i++) {
+        final paragraphs =
+            reflowLines(pageLines[i], runningHeaders: running);
+        if (paragraphs.isEmpty) continue; // skip blank / image-only pages
+        chapters.add(Chapter(title: 'Page ${i + 1}', paragraphs: paragraphs));
+      }
+      if (chapters.isEmpty) {
+        // No selectable text anywhere — almost always a scanned/image PDF.
+        return [
+          Chapter(title: 'No selectable text', paragraphs: const [
+            'This PDF has no selectable text — it looks like scanned images. '
+                'Read-aloud needs a text layer, so this file can’t be read aloud '
+                'without an OCR step.',
+          ]),
+        ];
+      }
+      return chapters;
+    } finally {
+      doc.dispose();
     }
-    return [Chapter(title: 'Full text', paragraphs: paragraphs)];
   }
 
   // ── EPUB ────────────────────────────────────────────────────────────────────
