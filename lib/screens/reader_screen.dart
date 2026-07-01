@@ -80,9 +80,60 @@ class _ReaderViewState extends State<_ReaderView> {
   final _keys = <int, GlobalKey>{};
   int _lastActive = -1;
 
+  // ── In-chapter search ──────────────────────────────────────────────────────
+  bool _searching = false;
+  final _searchCtl = TextEditingController();
+  String _query = '';
+  List<int> _matches = const [];
+  int _matchPos = -1;
+
+  void _closeSearch() => setState(() {
+        _searching = false;
+        _query = '';
+        _searchCtl.clear();
+        _matches = const [];
+        _matchPos = -1;
+      });
+
+  void _runSearch(String raw) {
+    final q = raw.trim().toLowerCase();
+    final chunks = widget.state.currentChapterChunks;
+    final matches = <int>[];
+    if (q.isNotEmpty) {
+      for (var i = 0; i < chunks.length; i++) {
+        if (chunks[i].toLowerCase().contains(q)) matches.add(i);
+      }
+    }
+    setState(() {
+      _query = q;
+      _matches = matches;
+      _matchPos = matches.isEmpty ? -1 : 0;
+    });
+    if (_matchPos >= 0) _scrollToChunk(_matches[_matchPos]);
+  }
+
+  void _stepMatch(int delta) {
+    if (_matches.isEmpty) return;
+    setState(() => _matchPos = (_matchPos + delta) % _matches.length);
+    _scrollToChunk(_matches[_matchPos]);
+  }
+
+  void _scrollToChunk(int idx) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _keys[idx]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx,
+            alignment: 0.3,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic);
+      }
+    });
+  }
+
   @override
   void dispose() {
     _scroll.dispose();
+    _searchCtl.dispose();
     super.dispose();
   }
 
@@ -124,27 +175,74 @@ class _ReaderViewState extends State<_ReaderView> {
           tooltip: 'Library',
           onPressed: () => Navigator.popUntil(context, (r) => r.isFirst),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(state.title, style: tt.titleSmall, overflow: TextOverflow.ellipsis),
-            if (state.currentChapterTitle.isNotEmpty)
-              Text(state.currentChapterTitle,
-                  style: tt.titleMedium, overflow: TextOverflow.ellipsis),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.text_fields),
-            tooltip: 'Text size',
-            onPressed: () => _showFontSheet(context, state),
-          ),
-          IconButton(
-            icon: const Icon(Icons.toc),
-            tooltip: 'Contents',
-            onPressed: () => _showContents(context, state),
-          ),
-        ],
+        title: _searching
+            ? TextField(
+                controller: _searchCtl,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  hintText: 'Search this chapter…',
+                  border: InputBorder.none,
+                ),
+                onChanged: _runSearch,
+                onSubmitted: (_) => _stepMatch(1),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(state.title,
+                      style: tt.titleSmall, overflow: TextOverflow.ellipsis),
+                  if (state.currentChapterTitle.isNotEmpty)
+                    Text(state.currentChapterTitle,
+                        style: tt.titleMedium, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+        actions: _searching
+            ? [
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      _matches.isEmpty
+                          ? (_query.isEmpty ? '' : '0/0')
+                          : '${_matchPos + 1}/${_matches.length}',
+                      style: tt.labelLarge,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                  tooltip: 'Previous match',
+                  onPressed: _matches.isEmpty ? null : () => _stepMatch(-1),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  tooltip: 'Next match',
+                  onPressed: _matches.isEmpty ? null : () => _stepMatch(1),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Close search',
+                  onPressed: _closeSearch,
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Search',
+                  onPressed: () => setState(() => _searching = true),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.text_fields),
+                  tooltip: 'Text size',
+                  onPressed: () => _showFontSheet(context, state),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.toc),
+                  tooltip: 'Contents',
+                  onPressed: () => _showContents(context, state),
+                ),
+              ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(2),
           child: LinearProgressIndicator(
@@ -154,49 +252,84 @@ class _ReaderViewState extends State<_ReaderView> {
           ),
         ),
       ),
-      body: ListView.builder(
-        controller: _scroll,
-        padding: const EdgeInsets.fromLTRB(22, 16, 22, 120),
-        itemCount: chapterChunks.length + 1,
-        itemBuilder: (context, i) {
-          if (i == 0) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                state.currentChapterTitle.isEmpty ? state.title : state.currentChapterTitle,
-                style: tt.headlineSmall,
+      // SelectionArea makes the reading text selectable + copyable; single taps
+      // still reach each paragraph's InkWell to play it.
+      body: SelectionArea(
+        child: ListView.builder(
+          controller: _scroll,
+          padding: const EdgeInsets.fromLTRB(22, 16, 22, 120),
+          itemCount: chapterChunks.length + 1,
+          itemBuilder: (context, i) {
+            if (i == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  state.currentChapterTitle.isEmpty
+                      ? state.title
+                      : state.currentChapterTitle,
+                  style: tt.headlineSmall,
+                ),
+              );
+            }
+            final idx = i - 1;
+            final key = _keys.putIfAbsent(idx, () => GlobalKey());
+            final isActive = idx == active;
+            final isCurrentMatch =
+                _matchPos >= 0 && _matches[_matchPos] == idx;
+            return Container(
+              key: key,
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: isActive
+                  ? BoxDecoration(
+                      color: cs.secondary.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(6),
+                    )
+                  : null,
+              padding: isActive
+                  ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+                  : EdgeInsets.zero,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => state.playChapterChunk(idx),
+                child: _chunkText(
+                    chapterChunks[idx], bodyStyle, cs, isCurrentMatch),
               ),
             );
-          }
-          final idx = i - 1;
-          final key = _keys.putIfAbsent(idx, () => GlobalKey());
-          final isActive = idx == active;
-          return Container(
-            key: key,
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: isActive
-                ? BoxDecoration(
-                    color: cs.secondary.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(6),
-                  )
-                : null,
-            padding: isActive
-                ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
-                : EdgeInsets.zero,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => state.playChapterChunk(idx),
-              child: Text(
-                chapterChunks[idx],
-                style: bodyStyle,
-                textAlign: TextAlign.justify,
-              ),
-            ),
-          );
-        },
+          },
+        ),
       ),
       bottomNavigationBar: _ReaderBar(state: state),
     );
+  }
+
+  /// A paragraph's text, with search-query occurrences highlighted (the current
+  /// match a touch stronger). Plain [Text] when there's no active query.
+  Widget _chunkText(
+      String text, TextStyle style, ColorScheme cs, bool isCurrentMatch) {
+    if (_query.isEmpty) {
+      return Text(text, style: style, textAlign: TextAlign.justify);
+    }
+    final lower = text.toLowerCase();
+    final hl = style.copyWith(
+      backgroundColor:
+          (isCurrentMatch ? cs.primary : cs.tertiary).withValues(alpha: 0.35),
+      fontWeight: FontWeight.w600,
+    );
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final i = lower.indexOf(_query, start);
+      if (i < 0) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+      if (i > start) spans.add(TextSpan(text: text.substring(start, i)));
+      spans.add(TextSpan(
+          text: text.substring(i, i + _query.length), style: hl));
+      start = i + _query.length;
+    }
+    return Text.rich(TextSpan(style: style, children: spans),
+        textAlign: TextAlign.justify);
   }
 
   void _showFontSheet(BuildContext context, ReaderState state) {
@@ -390,7 +523,8 @@ class _ReaderBar extends StatelessWidget {
                     value: state.selectedVoice,
                     isExpanded: true,
                     items: kPiperVoices
-                        .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                        .map((v) => DropdownMenuItem(
+                            value: v, child: Text(piperVoiceLabel(v))))
                         .toList(),
                     onChanged: (v) {
                       if (v != null) {
