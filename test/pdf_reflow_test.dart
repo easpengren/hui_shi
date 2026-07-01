@@ -92,6 +92,32 @@ void main() {
     test('returns empty for short documents', () {
       expect(detectRunningHeaders([[], []]), isEmpty);
     });
+
+    test('catches an export footer whose page number is embedded mid-line', () {
+      // Real case (Machiavelli, The Prince): an InDesign export footer of the
+      // form "<file>.indd <page>   <timestamp>" — the page number sits in the
+      // MIDDLE, so edge-only stripping left every page's footer unique and it
+      // was never detected. Normalizing all embedded page numbers fixes it.
+      const words = 'alpha beta gamma delta epsilon zeta eta theta iota kappa '
+          'lambda mu';
+      final wordList = words.split(' ');
+      final pages = [
+        for (var i = 0; i < wordList.length; i++)
+          [
+            // Genuinely unique body text per page (not just a differing number).
+            line('The chapter discusses ${wordList[i]} in careful detail.', 700),
+            line('780141395876_ThePrince_PRE.indd ${20 + i}   21/05/15 3:00 PM', 60),
+          ],
+      ];
+      final running = detectRunningHeaders(pages);
+      // The footer is detected...
+      expect(running, isNotEmpty);
+      // ...and dropped from the reflowed body of a page, while real body stays.
+      final body = reflowLines(pages[0], runningHeaders: running);
+      expect(body.join(' '), isNot(contains('ThePrince_PRE.indd')));
+      expect(body.join(' '), isNot(contains('3:00 PM')));
+      expect(body.join(' '), contains('alpha'));
+    });
   });
 
   group('isPageNumberLine', () {
@@ -101,6 +127,35 @@ void main() {
       expect(isPageNumberLine('Page 7'), isTrue);
       expect(isPageNumberLine('I'), isFalse);
       expect(isPageNumberLine('Introduction'), isFalse);
+    });
+  });
+
+  group('chaptersByHeading', () {
+    // A tall line (bigger font) reads as a chapter heading; body lines are h10.
+    PdfLine head(String t, double top) => PdfLine(t, 100, 400, top, top - 20);
+
+    test('splits into chapters at font-size headings; drops the title text', () {
+      final pages = [
+        [head('Chapter One', 720), line('First body of one.', 690), line('More one.', 675)],
+        [line('Continued body of chapter one.', 720)],
+        [head('Chapter Two', 720), line('Body of two.', 690)],
+        [line('Continued body of chapter two.', 720)],
+      ];
+      final chs = chaptersByHeading(pages);
+      expect(chs, isNotNull);
+      expect(chs!.map((c) => c.title).toList(), ['Chapter One', 'Chapter Two']);
+      final one = chs[0].paragraphs.join(' ');
+      expect(one, contains('First body of one'));
+      expect(one, contains('Continued body of chapter one'));
+      expect(one, isNot(contains('Chapter One'))); // title not duplicated in body
+      expect(chs[1].paragraphs.join(' '), contains('Body of two'));
+    });
+
+    test('returns null when there is no heading structure', () {
+      final pages = [
+        for (var i = 0; i < 6; i++) [line('Plain body line about topic $i.', 720)]
+      ];
+      expect(chaptersByHeading(pages), isNull);
     });
   });
 }

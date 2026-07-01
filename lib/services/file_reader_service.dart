@@ -103,10 +103,14 @@ class FileReaderService {
   // fragments WITH their coordinates, group them into visual lines, detect
   // running headers/footers across pages, then reflow each page's lines into
   // real paragraphs using vertical gaps / indentation / font-size (see
-  // pdf_reflow.dart). Each page becomes its own navigable section ("Page N").
+  // pdf_reflow.dart). Chapters come from the PDF's embedded outline (its real
+  // table of contents) when it has one; only when there's no usable outline do
+  // we fall back to one section per page ("Page N").
   Future<List<Chapter>> _extractPdf(String path) async {
     final doc = await PdfDocument.openFile(path);
     try {
+      // Reflow every page into clean paragraphs (header/footer detection needs
+      // all pages first).
       final pageLines = <List<PdfLine>>[];
       for (var i = 0; i < doc.pages.length; i++) {
         final text = await doc.pages[i].loadText();
@@ -123,14 +127,18 @@ class FileReaderService {
         pageLines.add(groupFragmentsIntoLines(frags));
       }
       final running = detectRunningHeaders(pageLines);
+      final pageParagraphs = <List<String>>[
+        for (final lines in pageLines) reflowLines(lines, runningHeaders: running),
+      ];
 
-      final chapters = <Chapter>[];
-      for (var i = 0; i < pageLines.length; i++) {
-        final paragraphs =
-            reflowLines(pageLines[i], runningHeaders: running);
-        if (paragraphs.isEmpty) continue; // skip blank / image-only pages
-        chapters.add(Chapter(title: 'Page ${i + 1}', paragraphs: paragraphs));
-      }
+      // TOC priority: (1) the PDF's embedded outline, (2) font-size headings in
+      // the text (for books like this that have no bookmarks), (3) one section
+      // per page as a last resort.
+      final outline = await _loadOutlineSafely(doc);
+      final chapters = _chaptersFromOutline(outline, pageParagraphs) ??
+          _fromReflowChapters(chaptersByHeading(pageLines, runningHeaders: running)) ??
+          _chaptersPerPage(pageParagraphs);
+
       if (chapters.isEmpty) {
         // No selectable text anywhere — almost always a scanned/image PDF.
         return [
@@ -145,6 +153,90 @@ class FileReaderService {
     } finally {
       doc.dispose();
     }
+  }
+
+  Future<List<PdfOutlineNode>> _loadOutlineSafely(PdfDocument doc) async {
+    try {
+      return await doc.loadOutline();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Depth-first flatten of the outline into (title, 0-based page) in reading
+  /// order, skipping nodes without a title or destination.
+  List<MapEntry<String, int>> _flattenOutline(
+      List<PdfOutlineNode> nodes, int pageCount) {
+    final out = <MapEntry<String, int>>[];
+    void walk(List<PdfOutlineNode> ns) {
+      for (final n in ns) {
+        final dest = n.dest;
+        final title = n.title.trim();
+        if (dest != null && title.isNotEmpty) {
+          out.add(MapEntry(title, (dest.pageNumber - 1).clamp(0, pageCount - 1)));
+        }
+        if (n.children.isNotEmpty) walk(n.children);
+      }
+    }
+
+    walk(nodes);
+    return out;
+  }
+
+  /// Build chapters from the embedded outline: one chapter per distinct start
+  /// page (nested entries sharing a page collapse to the outermost title),
+  /// gathering that page-range's paragraphs. Returns null when the outline is
+  /// unusable — empty, or so dense (≈a bookmark per page) that it's no better
+  /// than the page list — so the caller uses the per-page fallback.
+  List<Chapter>? _chaptersFromOutline(
+      List<PdfOutlineNode> outline, List<List<String>> pageParagraphs) {
+    final pageCount = pageParagraphs.length;
+    if (pageCount == 0) return null;
+    final entries = _flattenOutline(outline, pageCount)
+      ..sort((a, b) => a.value.compareTo(b.value));
+    if (entries.isEmpty) return null;
+
+    // Collapse entries that start on the same page (keep the first title).
+    final dedup = <MapEntry<String, int>>[];
+    for (final e in entries) {
+      if (dedup.isEmpty || dedup.last.value != e.value) dedup.add(e);
+    }
+    if (dedup.length > (pageCount * 0.9).floor() && dedup.length > 5) {
+      return null; // outline is basically a page list — not an improvement
+    }
+
+    final chapters = <Chapter>[];
+    // Front matter before the first bookmark, if it carries text.
+    final firstPage = dedup.first.value;
+    if (firstPage > 0) {
+      final para = <String>[
+        for (var p = 0; p < firstPage; p++) ...pageParagraphs[p]
+      ];
+      if (para.isNotEmpty) chapters.add(Chapter(title: 'Beginning', paragraphs: para));
+    }
+    for (var k = 0; k < dedup.length; k++) {
+      final start = dedup[k].value;
+      final end = k + 1 < dedup.length ? dedup[k + 1].value : pageCount;
+      final para = <String>[
+        for (var p = start; p < end; p++) ...pageParagraphs[p]
+      ];
+      if (para.isEmpty) continue;
+      chapters.add(Chapter(title: dedup[k].key, paragraphs: para));
+    }
+    return chapters.isEmpty ? null : chapters;
+  }
+
+  List<Chapter>? _fromReflowChapters(List<ReflowChapter>? cs) => cs == null
+      ? null
+      : [for (final c in cs) Chapter(title: c.title, paragraphs: c.paragraphs)];
+
+  List<Chapter> _chaptersPerPage(List<List<String>> pageParagraphs) {
+    final chapters = <Chapter>[];
+    for (var i = 0; i < pageParagraphs.length; i++) {
+      if (pageParagraphs[i].isEmpty) continue; // skip blank / image-only pages
+      chapters.add(Chapter(title: 'Page ${i + 1}', paragraphs: pageParagraphs[i]));
+    }
+    return chapters;
   }
 
   // ── EPUB ────────────────────────────────────────────────────────────────────

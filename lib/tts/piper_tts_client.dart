@@ -29,10 +29,21 @@ class PiperTtsClient {
        _voice = voice,
        _speed = speed;
 
+  // sherpa-onnx FFI must have its native library bound before ANY runtime
+  // object (OfflineTts) is constructed. Without this, engine creation throws
+  // and Piper produces no audio — one half of the "Piper voices don't work" bug.
+  static bool _bindingsInit = false;
+  static void _ensureBindings() {
+    if (_bindingsInit) return;
+    initBindings();
+    _bindingsInit = true;
+  }
+
   static Future<PiperTtsClient> create({
     String voice = kDefaultPiperVoice,
     double speed = 1.0,
   }) async {
+    _ensureBindings();
     final cache = TtsCache();
     final docs = await getApplicationDocumentsDirectory();
     final modelsDir = Directory('${docs.path}/piper_models')
@@ -134,6 +145,11 @@ class PiperTtsClient {
     final voiceDir = '${_modelsDir.path}/$voice';
     final modelPath = '$voiceDir/$voice.onnx';
     final dataDir = '$voiceDir/espeak-ng-data';
+    // Piper/VITS models require tokens.txt to map tokens→ids. It ships in the
+    // model tarball (extracted next to the .onnx); leaving it empty was the
+    // other half of the "Piper voices don't work" bug — synthesis produced
+    // nothing without the token vocabulary.
+    final tokensPath = '$voiceDir/tokens.txt';
 
     if (!File(modelPath).existsSync()) {
       throw Exception('Piper model not downloaded: $voice');
@@ -144,7 +160,7 @@ class PiperTtsClient {
         vits: OfflineTtsVitsModelConfig(
           model: modelPath,
           lexicon: '',
-          tokens: '',
+          tokens: File(tokensPath).existsSync() ? tokensPath : '',
           dataDir: Directory(dataDir).existsSync() ? dataDir : '',
           noiseScale: 0.667,
           noiseScaleW: 0.8,
