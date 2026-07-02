@@ -52,7 +52,7 @@ final _embeddedNumToken = RegExp(r'(?<!\d)\d{1,4}(?!\d)');
 /// wherever they sit — not just the edges — so a running head like
 /// "6 CAMPAIGNING TO ENGAGE AND WIN" and, critically, an export footer with the
 /// page number embedded mid-line (e.g. an InDesign
-/// "<file>.indd 25   21/05/15 3:00 PM" footer) both reduce to a stable key that
+/// `<file>.indd 25   21/05/15 3:00 PM` footer) both reduce to a stable key that
 /// repeats across pages and can be detected + dropped.
 String _normalizeRunningLine(String s) => s
     .replaceAll(_embeddedNumToken, ' ')

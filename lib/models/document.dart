@@ -12,15 +12,3 @@ class Chapter {
   /// Plain text of the chapter (paragraphs joined) — used for TTS chunking.
   String get text => paragraphs.join('\n\n');
 }
-
-/// A parsed document: an ordered list of chapters.
-class BookDocument {
-  final String title;
-  final List<Chapter> chapters;
-
-  const BookDocument({required this.title, required this.chapters});
-
-  /// Whole-book plain text — bridge for the existing flat TTS chunking path
-  /// until the reader works chapter-by-chapter.
-  String get flatText => chapters.map((c) => c.text).join('\n\n');
-}

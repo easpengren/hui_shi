@@ -526,25 +526,24 @@ class _ReaderBar extends StatelessWidget {
                         style: tt.bodySmall)
                   else
                     DropdownButton<String>(
-                      value: state.systemVoiceName == null
-                          ? '__default__'
-                          : '${state.systemVoiceName}|${state.systemVoiceLocale}',
+                      value: SystemTtsClient.encodeVoiceId(
+                          state.systemVoiceName, state.systemVoiceLocale),
                       isExpanded: true,
                       items: [
                         const DropdownMenuItem(
-                            value: '__default__',
+                            value: SystemTtsClient.defaultVoiceId,
                             child: Text('Device default voice')),
                         ...state.systemVoices.map((v) => DropdownMenuItem(
-                              value: '${v['name']}|${v['locale']}',
+                              value: SystemTtsClient.encodeVoiceMap(v),
                               child: Text(SystemTtsClient.voiceLabel(v),
                                   overflow: TextOverflow.ellipsis),
                             )),
                       ],
                       onChanged: (v) {
-                        if (v == null || v == '__default__') return;
-                        final parts = v.split('|');
-                        state.setSystemVoice(
-                            parts[0], parts.length > 1 ? parts[1] : '');
+                        if (v == null) return;
+                        final voice = SystemTtsClient.decodeVoiceId(v);
+                        if (voice == null) return;
+                        state.setSystemVoice(voice.$1, voice.$2);
                         setDialog(() {});
                       },
                     ),

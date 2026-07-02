@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../app_update_ui.dart';
+import 'app_update_ui.dart';
 import '../models/book.dart';
 import '../state/reader_state.dart';
 

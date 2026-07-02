@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ota_update/ota_update.dart';
 
-import 'services/app_updater.dart';
+import '../services/app_updater.dart';
 
 /// Checks the update manifest and, if a newer build exists, offers to install
 /// it. With [manual] true (the Settings button) it also reports when already up
