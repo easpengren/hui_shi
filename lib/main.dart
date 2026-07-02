@@ -21,7 +21,7 @@ void main() async {
   );
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ReaderState(handler),
+      create: (_) => ReaderState(handler)..init(),
       child: const LuJiApp(),
     ),
   );

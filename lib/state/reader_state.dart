@@ -65,14 +65,21 @@ class ReaderState extends ChangeNotifier {
   StreamSubscription<ChunkEvent>? _chunkSub;
   StreamSubscription<String>? _errorSub;
 
-  ReaderState(this._handler) {
-    _init();
-  }
+  // True once the TTS engines and playback controller have been built. Guards
+  // dispose so tearing down before (or without) init() can't touch the late
+  // fields — which also makes ReaderState safe to construct in tests.
+  bool _initialized = false;
 
-  Future<void> _init() async {
+  ReaderState(this._handler);
+
+  /// Build the TTS engines + playback controller, wire the media session, and
+  /// load the library. Kept separate from the constructor so this native-heavy
+  /// setup only runs when the real app starts, not when a test builds the state.
+  Future<void> init() async {
     _piper = await PiperTtsClient.create(voice: selectedVoice);
     _system = SystemTtsClient();
     _playback = PlaybackController(piper: _piper, system: _system);
+    _initialized = true;
 
     // System-media controls drive the same playback.
     _handler.onPlay = () =>
@@ -378,7 +385,7 @@ class ReaderState extends ChangeNotifier {
     _statusSub?.cancel();
     _chunkSub?.cancel();
     _errorSub?.cancel();
-    _playback.dispose();
+    if (_initialized) _playback.dispose();
     super.dispose();
   }
 }
