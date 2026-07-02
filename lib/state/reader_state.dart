@@ -42,6 +42,13 @@ class ReaderState extends ChangeNotifier {
   PlaybackStatus playbackStatus = PlaybackStatus.idle;
   TtsEngine selectedEngine = TtsEngine.system;
   String selectedVoice = kDefaultPiperVoice;
+  // System (Android/iOS) engine voices — enumerated from the platform. Empty
+  // selection means "engine default".
+  List<Map<String, String>> systemVoices = [];
+  String? systemVoiceName;
+  String? systemVoiceLocale;
+  // Last read-aloud error (e.g. Piper synthesis failure), surfaced in the UI.
+  String? ttsError;
   double playbackSpeed = 1.0;
   bool piperModelDownloaded = false;
   double downloadProgress = 0.0;
@@ -56,16 +63,14 @@ class ReaderState extends ChangeNotifier {
 
   StreamSubscription<PlaybackStatus>? _statusSub;
   StreamSubscription<ChunkEvent>? _chunkSub;
+  StreamSubscription<String>? _errorSub;
 
   ReaderState(this._handler) {
     _init();
   }
 
   Future<void> _init() async {
-    _piper = await PiperTtsClient.create(
-      voice: selectedVoice,
-      speed: playbackSpeed,
-    );
+    _piper = await PiperTtsClient.create(voice: selectedVoice);
     _system = SystemTtsClient();
     _playback = PlaybackController(piper: _piper, system: _system);
 
@@ -92,9 +97,27 @@ class ReaderState extends ChangeNotifier {
       _saveProgress();
       notifyListeners();
     });
+    _errorSub = _playback.errorStream.listen((msg) {
+      ttsError = msg;
+      notifyListeners();
+    });
 
     piperModelDownloaded = _piper.isModelDownloaded(selectedVoice);
     await _loadLibrary();
+    loadSystemVoices();
+  }
+
+  /// Enumerate the platform's TTS voices for the picker (Android/iOS only).
+  Future<void> loadSystemVoices() async {
+    systemVoices = await _system.getVoices();
+    notifyListeners();
+  }
+
+  Future<void> setSystemVoice(String name, String locale) async {
+    systemVoiceName = name;
+    systemVoiceLocale = locale;
+    await _system.setVoice(name, locale);
+    notifyListeners();
   }
 
   // ── Library ───────────────────────────────────────────────────────────────
@@ -225,7 +248,10 @@ class ReaderState extends ChangeNotifier {
 
   // ── Playback controls ─────────────────────────────────────────────────────
 
-  Future<void> play() => _playback.play();
+  Future<void> play() {
+    ttsError = null;
+    return _playback.play();
+  }
   Future<void> pause() => _playback.pause();
   Future<void> resume() => _playback.resume();
   Future<void> seekToChunk(int index) => _playback.seekToChunk(index);
@@ -313,9 +339,11 @@ class ReaderState extends ChangeNotifier {
     playbackSpeed = speed;
     _playback.setSpeed(speed);
     notifyListeners();
-    // Apply it to what's playing now — an engine can't retune a sentence
-    // mid-flight, so restart the current chunk at the new speed.
-    if (playbackStatus == PlaybackStatus.playing) {
+    // Piper plays through just_audio, which retunes speed live. System TTS
+    // can't retune the sentence it's already speaking, so restart the current
+    // chunk at the new speed for that engine only.
+    if (playbackStatus == PlaybackStatus.playing &&
+        selectedEngine == TtsEngine.system) {
       await _playback.seekToChunk(currentChunkIndex);
       await _playback.play();
     }
@@ -349,6 +377,7 @@ class ReaderState extends ChangeNotifier {
   void dispose() {
     _statusSub?.cancel();
     _chunkSub?.cancel();
+    _errorSub?.cancel();
     _playback.dispose();
     super.dispose();
   }

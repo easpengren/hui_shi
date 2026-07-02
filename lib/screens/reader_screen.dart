@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/tts_engine.dart';
 import '../playback/playback_controller.dart';
 import '../state/reader_state.dart';
+import '../tts/system_tts_client.dart';
 
 /// A chapter-at-a-time reader in the Four Books style: serif-calm typography on
 /// paper, a table of contents, font sizing, and read-aloud where the spoken
@@ -517,6 +518,37 @@ class _ReaderBar extends StatelessWidget {
                     setDialog(() {});
                   },
                 ),
+                if (state.selectedEngine == TtsEngine.system) ...[
+                  const SizedBox(height: 12),
+                  if (state.systemVoices.isEmpty)
+                    Text('No installed system voices found. Add voices in '
+                        'your device TTS settings.',
+                        style: tt.bodySmall)
+                  else
+                    DropdownButton<String>(
+                      value: state.systemVoiceName == null
+                          ? '__default__'
+                          : '${state.systemVoiceName}|${state.systemVoiceLocale}',
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem(
+                            value: '__default__',
+                            child: Text('Device default voice')),
+                        ...state.systemVoices.map((v) => DropdownMenuItem(
+                              value: '${v['name']}|${v['locale']}',
+                              child: Text(SystemTtsClient.voiceLabel(v),
+                                  overflow: TextOverflow.ellipsis),
+                            )),
+                      ],
+                      onChanged: (v) {
+                        if (v == null || v == '__default__') return;
+                        final parts = v.split('|');
+                        state.setSystemVoice(
+                            parts[0], parts.length > 1 ? parts[1] : '');
+                        setDialog(() {});
+                      },
+                    ),
+                ],
                 if (state.selectedEngine == TtsEngine.piper) ...[
                   const SizedBox(height: 12),
                   DropdownButton<String>(
@@ -554,6 +586,14 @@ class _ReaderBar extends StatelessWidget {
                               label: Text('Download ${state.selectedVoice}'),
                             ),
                     ),
+                ],
+                if (state.ttsError != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Playback error: ${state.ttsError}',
+                    style: tt.bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.error),
+                  ),
                 ],
               ],
             ),

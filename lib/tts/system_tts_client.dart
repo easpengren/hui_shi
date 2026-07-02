@@ -37,20 +37,36 @@ class SystemTtsClient {
     if (_initialized) await _tts.setSpeechRate(_rateFor(speed));
   }
 
-  /// Returns a list of available voice maps [{'name': ..., 'locale': ...}].
+  /// Returns available English voices as [{'name': ..., 'locale': ...}],
+  /// de-duplicated and sorted. The raw engine list can carry hundreds of
+  /// locales plus duplicates; we keep only en-* so the picker is usable.
   Future<List<Map<String, String>>> getVoices() async {
     if (!_supported) return [];
     await init();
     final raw = await _tts.getVoices as List<dynamic>? ?? [];
-    return raw
-        .whereType<Map>()
-        .map(
-          (v) => {
-            'name': v['name']?.toString() ?? '',
-            'locale': v['locale']?.toString() ?? '',
-          },
-        )
-        .toList();
+    final seen = <String>{};
+    final voices = <Map<String, String>>[];
+    for (final v in raw.whereType<Map>()) {
+      final name = v['name']?.toString() ?? '';
+      final locale = v['locale']?.toString() ?? '';
+      if (name.isEmpty) continue;
+      if (!locale.toLowerCase().startsWith('en')) continue;
+      final key = '$name|$locale';
+      if (!seen.add(key)) continue;
+      voices.add({'name': name, 'locale': locale});
+    }
+    voices.sort((a, b) {
+      final byLocale = (a['locale'] ?? '').compareTo(b['locale'] ?? '');
+      return byLocale != 0 ? byLocale : (a['name'] ?? '').compareTo(b['name'] ?? '');
+    });
+    return voices;
+  }
+
+  /// Human label for a system voice map, for the picker.
+  static String voiceLabel(Map<String, String> v) {
+    final name = v['name'] ?? '';
+    final locale = v['locale'] ?? '';
+    return locale.isEmpty ? name : '$name  ·  $locale';
   }
 
   Future<void> setVoice(String name, String locale) async {

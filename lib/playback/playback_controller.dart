@@ -33,9 +33,11 @@ class PlaybackController {
 
   final _statusCtrl = StreamController<PlaybackStatus>.broadcast();
   final _chunkCtrl = StreamController<ChunkEvent>.broadcast();
+  final _errorCtrl = StreamController<String>.broadcast();
 
   Stream<PlaybackStatus> get statusStream => _statusCtrl.stream;
   Stream<ChunkEvent> get chunkStream => _chunkCtrl.stream;
+  Stream<String> get errorStream => _errorCtrl.stream;
 
   PlaybackStatus get status => _status;
   int get currentIndex => _currentIndex;
@@ -50,7 +52,8 @@ class PlaybackController {
   void setEngine(TtsEngine engine) => _engine = engine;
 
   void setSpeed(double speed) {
-    _piper.setSpeed(speed);
+    // Piper audio is synthesized at neutral tempo; the just_audio player is its
+    // single speed control. System TTS retunes via flutter_tts's speech rate.
     _system.setSpeed(speed);
     _player.setSpeed(speed);
   }
@@ -147,7 +150,10 @@ class PlaybackController {
           await _player.play();
         }
       }
-    } catch (_) {
+    } catch (e) {
+      // Surface the failure instead of silently going quiet — this is what made
+      // Piper "act like it's loading then play nothing" with no explanation.
+      _errorCtrl.add('$e');
       _setStatus(PlaybackStatus.idle);
     }
   }
@@ -209,5 +215,6 @@ class PlaybackController {
     _piper.dispose();
     _statusCtrl.close();
     _chunkCtrl.close();
+    _errorCtrl.close();
   }
 }

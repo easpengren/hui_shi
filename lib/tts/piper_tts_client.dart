@@ -14,7 +14,6 @@ class PiperTtsClient {
   final Directory _modelsDir;
 
   String _voice;
-  double _speed;
 
   OfflineTts? _tts;
   String? _loadedVoice;
@@ -23,11 +22,9 @@ class PiperTtsClient {
     required TtsCache cache,
     required Directory modelsDir,
     required String voice,
-    required double speed,
   }) : _cache = cache,
        _modelsDir = modelsDir,
-       _voice = voice,
-       _speed = speed;
+       _voice = voice;
 
   // sherpa-onnx FFI must have its native library bound before ANY runtime
   // object (OfflineTts) is constructed. Without this, engine creation throws
@@ -41,7 +38,6 @@ class PiperTtsClient {
 
   static Future<PiperTtsClient> create({
     String voice = kDefaultPiperVoice,
-    double speed = 1.0,
   }) async {
     _ensureBindings();
     final cache = TtsCache();
@@ -52,7 +48,6 @@ class PiperTtsClient {
       cache: cache,
       modelsDir: modelsDir,
       voice: voice,
-      speed: speed,
     );
   }
 
@@ -65,8 +60,6 @@ class PiperTtsClient {
       _loadedVoice = null;
     }
   }
-
-  void setSpeed(double speed) => _speed = speed;
 
   String get currentVoice => _voice;
 
@@ -187,7 +180,11 @@ class PiperTtsClient {
     if (cached != null) return cached;
 
     final engine = await _ensureEngine(_voice);
-    final result = engine.generate(text: text, sid: 0, speed: _speed);
+    // Synthesize at neutral tempo. Playback speed is applied by the audio
+    // player (just_audio) instead — otherwise speed was baked into the WAV
+    // *and* re-applied at playback (double speed), and the cache (keyed by
+    // book/chunk/voice, not speed) would return audio at the wrong tempo.
+    final result = engine.generate(text: text, sid: 0, speed: 1.0);
     final wav = float32ToWav(result.samples, result.sampleRate);
     return _cache.put(bookId, chunkIndex, _voice, wav);
   }
