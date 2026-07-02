@@ -69,6 +69,25 @@ class SystemTtsClient {
     return locale.isEmpty ? name : '$name  ·  $locale';
   }
 
+  /// Dropdown value standing for "use the engine's default voice".
+  static const String defaultVoiceId = '__default__';
+
+  /// Encode a (name, locale) selection as a single dropdown value. A null
+  /// [name] maps to [defaultVoiceId].
+  static String encodeVoiceId(String? name, String? locale) =>
+      name == null ? defaultVoiceId : '$name|$locale';
+
+  /// Dropdown value for a voice map from [getVoices].
+  static String encodeVoiceMap(Map<String, String> v) =>
+      '${v['name']}|${v['locale']}';
+
+  /// Decode a dropdown value back to (name, locale), or null for the default.
+  static (String name, String locale)? decodeVoiceId(String id) {
+    if (id == defaultVoiceId) return null;
+    final parts = id.split('|');
+    return (parts[0], parts.length > 1 ? parts[1] : '');
+  }
+
   Future<void> setVoice(String name, String locale) async {
     if (!_supported) return;
     await init();
