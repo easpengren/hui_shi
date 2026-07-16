@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:epubx/epubx.dart';
 
+import 'package:lu_ji/utils/footer_stripper.dart';
+
 enum SupportedFileType { txt, pdf, epub }
 
 class FileReadResult {
@@ -113,8 +115,9 @@ class FileReaderService {
     debugPrint('[LuJi] _extractPdf: opening $path');
     final doc = await PdfDocument.openFile(path);
     debugPrint('[LuJi] _extractPdf: opened, pageCount=${doc.pages.length}');
-    final buffer = StringBuffer();
+    final pageTexts = <String>[];
     final pageCount = doc.pages.length;
+    var runningChars = 0;
     var nextPage = 1;
     var truncated = false;
     for (var i = 1; i <= pageCount; i++) {
@@ -124,18 +127,24 @@ class FileReaderService {
       try {
         final page = doc.pages[i - 1];
         final pageText = await page.loadText();
-        buffer.writeln(pageText.fullText);
+        pageTexts.add(pageText.fullText);
+        runningChars += pageText.fullText.length + 1;
       } catch (e) {
         debugPrint('[LuJi] _extractPdf: page $i error: $e');
         // Skip unreadable pages and continue extraction.
       }
 
-      if (buffer.length >= _maxExtractedChars) {
+      if (runningChars >= _maxExtractedChars) {
         onProgress?.call('Large PDF detected. Loading first part for now...');
         truncated = true;
         nextPage = i + 1;
         break;
       }
+    }
+    // Drop running headers/footers/page numbers before joining the pages.
+    final buffer = StringBuffer();
+    for (final p in stripRepeatedHeadersFooters(pageTexts)) {
+      buffer.writeln(p);
     }
     final text = buffer.toString();
     final sliced = text.length <= _maxExtractedChars
@@ -157,7 +166,7 @@ class FileReaderService {
     void Function(String status)? onProgress,
   }) async {
     final doc = await PdfDocument.openFile(path);
-    final buffer = StringBuffer();
+    final pageTexts = <String>[];
     final pageCount = doc.pages.length;
 
     for (var i = startPage; i <= pageCount; i++) {
@@ -167,13 +176,18 @@ class FileReaderService {
       try {
         final page = doc.pages[i - 1];
         final pageText = await page.loadText();
-        buffer.writeln(pageText.fullText);
+        pageTexts.add(pageText.fullText);
       } catch (e) {
         debugPrint('[LuJi] continuePdf: page $i error: $e');
         // Skip unreadable pages and continue extraction.
       }
     }
 
+    // Same header/footer stripping as the first batch (they recur here too).
+    final buffer = StringBuffer();
+    for (final p in stripRepeatedHeadersFooters(pageTexts)) {
+      buffer.writeln(p);
+    }
     return buffer.toString();
   }
 

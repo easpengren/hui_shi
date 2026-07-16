@@ -515,37 +515,43 @@ class _ContentAreaState extends State<_ContentArea> {
         Expanded(
           child: DossierPanel(
             padding: const EdgeInsets.all(10),
-            child: ScrollablePositionedList.builder(
-              itemScrollController: _itemScrollController,
-              itemPositionsListener: _itemPositionsListener,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              itemCount: state.chunks.length,
-              itemBuilder: (context, index) {
-                final isCurrent = index == state.currentChunkIndex;
-                return GestureDetector(
-                  onTap: () => state.seekAndPlay(index),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isCurrent
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.secondary.withValues(alpha: 0.25)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: RichText(
-                      text: _buildChunkSpan(
-                        context,
-                        state.chunks[index],
-                        isCurrent,
+            // SelectionArea makes the body text selectable/copyable across
+            // chunks (drag to select, long-press for the copy toolbar) while a
+            // plain tap still falls through to the per-chunk seek-and-play.
+            child: SelectionArea(
+              child: ScrollablePositionedList.builder(
+                itemScrollController: _itemScrollController,
+                itemPositionsListener: _itemPositionsListener,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                itemCount: state.chunks.length,
+                itemBuilder: (context, index) {
+                  final isCurrent = index == state.currentChunkIndex;
+                  return GestureDetector(
+                    onTap: () => state.seekAndPlay(index),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isCurrent
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.secondary.withValues(alpha: 0.25)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      // Text.rich (not RichText) so SelectionArea can select it.
+                      child: Text.rich(
+                        _buildChunkSpan(
+                          context,
+                          state.chunks[index],
+                          isCurrent,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ),
