@@ -1,0 +1,85 @@
+name: Android Build
+
+on:
+  push:
+    branches:
+      - flutter
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build release APK
+    runs-on: self-hosted
+    env:
+      HOME: /home/runner
+      ANDROID_HOME: /opt/android-sdk
+      PUB_CACHE: /home/runner/.pub-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      # The signing key must be STABLE across builds. app/build.gradle.kts signs
+      # release with the debug config, so a keystore generated per-run would
+      # give every APK a different signature — and Android refuses to update an
+      # installed app whose signature changed, forcing an uninstall (and losing
+      # the library) on every release. Hence the secret.
+      - name: Restore debug keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > ~/.android/debug.keystore \
+              && echo "Keystore restored from secret." \
+              || { echo "::warning::Could not decode ANDROID_DEBUG_KEYSTORE_B64 — generating a temporary one."; rm -f ~/.android/debug.keystore; }
+          fi
+          if [ ! -s ~/.android/debug.keystore ]; then
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_B64 not set — this APK will not install over an existing LuJi."
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Install Flutter dependencies
+        run: /opt/flutter/bin/flutter pub get
+
+      # Gate the APK on analyze + tests, the way Confucius does — this workflow
+      # is the only thing that runs on a push here, so it is where the checks
+      # belong or they never run at all.
+      - name: Analyze
+        run: /opt/flutter/bin/flutter analyze --no-fatal-warnings --no-fatal-infos
+
+      - name: Run tests
+        run: /opt/flutter/bin/flutter test
+
+      - name: Build release APK
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%d)
+          echo "Building #${{ github.run_number }} · $SHA · $DATE"
+          /opt/flutter/bin/flutter build apk --release \
+            --build-name="1.0.${{ github.run_number }}" \
+            --build-number="${{ github.run_number }}"
+
+      # Published alongside Confucius rather than on its own host: the Caddyfile
+      # already serves this directory at /downloads, so LuJi costs no new site,
+      # no DNS and no certificate — only a distinct filename.
+      - name: Publish APK
+        run: |
+          DEST=/root/hetzner_hosting_setup/srv/data/www/confucius
+          mkdir -p "$DEST"
+          cp build/app/outputs/flutter-apk/app-release.apk "$DEST/luji-latest.apk"
+          echo "APK available at https://confucius.monolithstudio.art/downloads/luji-latest.apk"
