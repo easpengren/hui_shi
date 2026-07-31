@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/book.dart';
@@ -207,6 +211,99 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   // ── Document loading ──────────────────────────────────────────────────────
+
+  // ── Shared text (#97) ─────────────────────────────────────────────────────
+
+  static const MethodChannel _shareChannel = MethodChannel('lu_ji/share');
+
+  /// Open text another app shared with us, if any is waiting.
+  ///
+  /// Confucius extracts the readable article from a shared link and sends the
+  /// prose here, because a web page is mostly navigation and there is no HTML
+  /// parser on this side worth the weight. LuJi's job is the reading.
+  ///
+  /// The text is written to a `.txt` in our own documents directory and then
+  /// opened through the ordinary file path, so it lands in the library with a
+  /// position, bookmarks and everything else a book gets. Inventing a
+  /// file-less book type would have meant a second code path through chunking,
+  /// playback and persistence for no gain.
+  Future<void> consumeSharedText() async {
+    String? shared;
+    try {
+      shared = await _shareChannel.invokeMethod<String>('consumeSharedText');
+    } catch (_) {
+      return; // no host channel (desktop, tests) — nothing to consume
+    }
+    final text = shared?.trim() ?? '';
+    if (text.isEmpty) return;
+    await openSharedText(text);
+  }
+
+  /// Wire the push half: a share arriving while LuJi is already running never
+  /// goes through a cold start, so nothing would otherwise ask again.
+  void listenForSharedText() {
+    _shareChannel.setMethodCallHandler((call) async {
+      if (call.method == 'sharedTextArrived') await consumeSharedText();
+    });
+  }
+
+  /// Persist [text] as a document and open it.
+  Future<void> openSharedText(String text) async {
+    loadState = LoadState.loading;
+    errorMessage = null;
+    loadStatus = 'Opening shared text...';
+    notifyListeners();
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final shared = Directory('${dir.path}/shared');
+      if (!shared.existsSync()) shared.createSync(recursive: true);
+
+      // The filename becomes the library title, so it is taken from the text's
+      // own opening rather than a timestamp nobody can recognise later.
+      final file = File('${shared.path}/${_sharedFileName(text)}');
+      await file.writeAsString(text);
+
+      final result = await _fileReader.readFromPath(
+        file.path,
+        onProgress: (s) {
+          loadStatus = s;
+          notifyListeners();
+        },
+      );
+      if (result == null) {
+        errorMessage = 'Could not open the shared text.';
+        loadState = LoadState.error;
+        notifyListeners();
+        return;
+      }
+      await _loadDocument(result);
+    } catch (e, st) {
+      debugPrint('[LuJi] openSharedText error: $e\n$st');
+      errorMessage = e.toString();
+      loadState = LoadState.error;
+      notifyListeners();
+    }
+  }
+
+  /// A recognisable, filesystem-safe name from the text's first line.
+  ///
+  /// Uniquified, so sharing the same article twice does not silently reopen
+  /// the first copy and lose the new one.
+  static String _sharedFileName(String text) {
+    final firstLine = text.split('\n').firstWhere(
+      (l) => l.trim().isNotEmpty,
+      orElse: () => 'Shared text',
+    );
+    final safe = firstLine
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9 ._-]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final stem = (safe.isEmpty ? 'Shared text' : safe);
+    final capped = stem.length <= 60 ? stem : stem.substring(0, 60).trim();
+    return '$capped ${DateTime.now().millisecondsSinceEpoch}.txt';
+  }
 
   Future<void> pickFile() async {
     loadState = LoadState.loading;

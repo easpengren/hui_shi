@@ -11,7 +11,12 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ReaderState(),
+      // #97: pick up text shared from another app — Confucius sends extracted
+      // article prose here. `listenForSharedText` covers a share arriving while
+      // LuJi is already running, which never goes through a cold start.
+      create: (_) => ReaderState()
+        ..listenForSharedText()
+        ..consumeSharedText(),
       child: const LuJiApp(),
     ),
   );
