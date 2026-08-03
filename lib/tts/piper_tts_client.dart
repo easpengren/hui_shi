@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:isolate';
 import 'package:archive/archive_io.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
@@ -57,6 +58,23 @@ class PiperTtsClient {
        _modelsDir = modelsDir,
        _voice = voice,
        _speed = speed;
+
+  /// A client pointed at [modelsDir], for tests.
+  ///
+  /// `create()` needs `getApplicationDocumentsDirectory()`, which does not
+  /// exist off-device — so without this the on-disk checks that decide whether
+  /// a voice works could not be exercised at all.
+  @visibleForTesting
+  factory PiperTtsClient.forTesting({
+    required Directory modelsDir,
+    String voice = kDefaultPiperVoice,
+  }) =>
+      PiperTtsClient._(
+        cache: TtsCache(),
+        modelsDir: modelsDir,
+        voice: voice,
+        speed: 1.0,
+      );
 
   static Future<PiperTtsClient> create({
     String voice = kDefaultPiperVoice,
@@ -150,6 +168,25 @@ class PiperTtsClient {
       if (tmpArchive.existsSync()) {
         tmpArchive.deleteSync();
       }
+    }
+
+    // Verify the extraction actually produced a usable model before claiming
+    // success. It used to report 'Done' on the strength of nothing having
+    // thrown, so a partial or unexpected archive left the app believing the
+    // voice was installed — and the failure surfaced much later, as
+    // "Piper model not downloaded" at the moment the owner pressed play.
+    // That gap is what "Piper voices broken" looks like from the outside.
+    if (!isModelDownloaded(voice)) {
+      final present = voiceDir
+          .listSync()
+          .map((e) => e.path.split('/').last)
+          .take(8)
+          .join(', ');
+      throw Exception(
+        'Extracted $voice but it is missing its model files '
+        '(expected $voice.onnx, tokens.txt and espeak-ng-data/; '
+        'found: ${present.isEmpty ? 'nothing' : present}).',
+      );
     }
 
     onProgress(1.0, 'Done');

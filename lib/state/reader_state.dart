@@ -790,7 +790,13 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
         downloadStatus = status;
         notifyListeners();
       });
-      piperModelDownloaded = true;
+      // Ask, do not assume. This was set to `true` on the strength of
+      // downloadModel not throwing, which is a different claim from the model
+      // being on disk and usable.
+      piperModelDownloaded = _piper.isModelDownloaded(selectedVoice);
+      if (!piperModelDownloaded) {
+        downloadStatus = 'Download finished but the voice is not usable.';
+      }
     } catch (e) {
       downloadStatus = 'Failed: $e';
     } finally {
