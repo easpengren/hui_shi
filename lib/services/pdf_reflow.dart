@@ -43,6 +43,31 @@ bool isPageNumberLine(String s) =>
     _romanNumeralLine.hasMatch(s) ||
     _pageLabelLine.hasMatch(s);
 
+final _pageLabelPrefix = RegExp(r'^(page|p)\.?\s*', caseSensitive: false);
+
+/// The printed page number on a page, or null when it carries none.
+///
+/// This is the number in the *book*, not the position of the sheet in the file.
+/// The two differ by the whole of the front matter, so navigating by the PDF's
+/// own page index lands nowhere near where a reader means by "page 213". The
+/// detection already exists in order to *delete* these lines; this reads the
+/// value before it is thrown away.
+///
+/// The last candidate wins: lines arrive top-first, and a folio sits at the
+/// foot of the page far more often than the head. A page with no number returns
+/// null, and the caller carries the sequence forward.
+String? printedPageNumber(List<PdfLine> lines) {
+  String? found;
+  for (final line in lines) {
+    final text = line.text.trim();
+    if (isPageNumberLine(text)) {
+      final value = text.replaceFirst(_pageLabelPrefix, '').trim();
+      if (value.isNotEmpty) found = value;
+    }
+  }
+  return found;
+}
+
 // A standalone short number token (page number) anywhere in a line. Arabic
 // only — matching roman numerals here would eat real words ("did", "mill", …).
 final _embeddedNumToken = RegExp(r'(?<!\d)\d{1,4}(?!\d)');

@@ -86,18 +86,50 @@ bool isPublisherBoilerplate(String paragraph) {
 /// is the failure that would actually matter.
 const _edgeWindow = 30;
 
-/// Remove publisher boilerplate near the start and end of [chunks].
-List<String> dropBoilerplate(List<String> chunks, {int edgeWindow = _edgeWindow}) {
-  if (chunks.isEmpty) return chunks;
-
-  final kept = <String>[];
+/// Indices of [chunks] to keep — the index-preserving form of
+/// [dropBoilerplate], for callers that must remap positions alongside the text
+/// (page anchors, chapter starts).
+List<int> keptChunkIndices(List<String> chunks, {int edgeWindow = _edgeWindow}) {
+  final kept = <int>[];
   for (var i = 0; i < chunks.length; i++) {
     final nearEdge = i < edgeWindow || i >= chunks.length - edgeWindow;
     if (nearEdge && isPublisherBoilerplate(chunks[i])) continue;
-    kept.add(chunks[i]);
+    kept.add(i);
   }
-
   // A document that is *entirely* boilerplate is far more likely to be a
   // misjudgement than a book with no content. Hand it back untouched.
-  return kept.isEmpty ? chunks : kept;
+  if (kept.isEmpty) return List<int>.generate(chunks.length, (i) => i);
+  return kept;
+}
+
+/// Remove publisher boilerplate near the start and end of [chunks].
+List<String> dropBoilerplate(List<String> chunks, {int edgeWindow = _edgeWindow}) {
+  if (chunks.isEmpty) return chunks;
+  return [
+    for (final i in keptChunkIndices(chunks, edgeWindow: edgeWindow)) chunks[i],
+  ];
+}
+
+/// Indices of [paragraphs] that lie within the Project Gutenberg markers.
+///
+/// The paragraph-level counterpart of [stripGutenbergWrapper], needed because
+/// page anchors are recorded against paragraph positions: dropping the wrapper
+/// by rewriting the text would leave every anchor pointing at the wrong place.
+List<int> gutenbergBodyIndices(List<String> paragraphs) {
+  var first = 0;
+  var last = paragraphs.length;
+  for (var i = 0; i < paragraphs.length; i++) {
+    if (_gutenbergStart.hasMatch(paragraphs[i])) {
+      first = i + 1;
+      break;
+    }
+  }
+  for (var i = first; i < paragraphs.length; i++) {
+    if (_gutenbergEnd.hasMatch(paragraphs[i])) {
+      last = i;
+      break;
+    }
+  }
+  if (first >= last) return List<int>.generate(paragraphs.length, (i) => i);
+  return [for (var i = first; i < last; i++) i];
 }

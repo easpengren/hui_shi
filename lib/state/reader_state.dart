@@ -8,9 +8,8 @@ import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
 import '../services/file_reader_service.dart';
-import '../services/front_matter.dart';
+import '../services/page_map.dart';
 import '../services/library_service.dart';
-import '../services/text_cleaner.dart';
 import '../tts/piper_tts_client.dart';
 import '../tts/system_tts_client.dart';
 
@@ -39,6 +38,11 @@ class ReaderState extends ChangeNotifier {
   // continuous over `chunks`; the reader works one chapter at a time.
   List<Chapter> chapters = [];
   List<int> chapterChunkStarts = [];
+
+  /// Page navigation, when the source carried real page numbers. Empty
+  /// otherwise — pages are never inferred from position. See page_map.dart.
+  Map<String, int> pageChunkStarts = const <String, int>{};
+  List<String?> chunkPages = const <String?>[];
   double fontScale = 1.0;
   PlaybackStatus playbackStatus = PlaybackStatus.idle;
   TtsEngine selectedEngine = TtsEngine.system;
@@ -194,22 +198,23 @@ class ReaderState extends ChangeNotifier {
     rawText = result.content;
     chapters = result.chapters;
 
-    // Chunk each chapter and record where it begins in the flat chunk list.
-    chunks = [];
-    chapterChunkStarts = [];
-    for (final ch in chapters) {
-      chapterChunkStarts.add(chunks.length);
-      chunks.addAll(
-        dropBoilerplate(chunkText(cleanText(stripGutenbergWrapper(ch.text)))),
-      );
+    // Chunk the document, carrying page anchors from paragraph positions onto
+    // chunk positions (page_map.dart). Publisher boilerplate and the Gutenberg
+    // wrapper are dropped in the same pass so anchors stay aligned.
+    var document = buildChunkedDocument(
+      chapters: chapters,
+      pageStarts: result.pageStarts,
+    );
+    if (document.chunks.isEmpty) {
+      chapters = [
+        Chapter(title: title, paragraphs: _splitIntoParagraphs(result.content)),
+      ];
+      document = buildChunkedDocument(chapters: chapters);
     }
-    if (chunks.isEmpty) {
-      chunks = dropBoilerplate(
-        chunkText(cleanText(stripGutenbergWrapper(result.content))),
-      );
-      chapterChunkStarts = [0];
-      chapters = [Chapter(title: title, paragraphs: chunks)];
-    }
+    chunks = document.chunks;
+    chapterChunkStarts = document.chapterChunkStarts;
+    pageChunkStarts = document.pageChunkStarts;
+    chunkPages = document.chunkPages;
 
     // The saved index was recorded against a possibly different chunking;
     // rescale so an improvement to chunking never strands a reader mid-book.
@@ -326,8 +331,40 @@ class ReaderState extends ChangeNotifier {
     await seekToChunk(chapterChunkStarts[index]);
   }
 
+  /// Blank-line split, for the last-resort path where chaptering produced
+  /// nothing usable.
+  static List<String> _splitIntoParagraphs(String text) => text
+      .split(RegExp(r'\n\s*\n'))
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
+
   Future<void> nextChapter() => goToChapter(currentChapterIndex + 1);
   Future<void> prevChapter() => goToChapter(currentChapterIndex - 1);
+
+  /// Whether this book carries the printed edition's page numbers.
+  ///
+  /// False for most reflowable files, and the UI should say so rather than
+  /// offer a page box that does nothing.
+  bool get hasPages => pageChunkStarts.isNotEmpty;
+
+  /// Page labels in reading order.
+  List<String> get pageLabels => pageChunkStarts.keys.toList();
+
+  /// The printed page showing at the current position, or null.
+  String? get currentPage =>
+      currentChunkIndex >= 0 && currentChunkIndex < chunkPages.length
+          ? chunkPages[currentChunkIndex]
+          : null;
+
+  /// Jump to a page of the printed book. Returns false if there is no such
+  /// page — the caller reports that rather than seeking somewhere arbitrary.
+  Future<bool> goToPage(String label) async {
+    final target = pageChunkStarts[normalizePageLabel(label)];
+    if (target == null) return false;
+    await seekToChunk(target);
+    return true;
+  }
 
   /// Seek to a chunk by its position WITHIN the current chapter and play (used by
   /// tap-to-read in the reader view).
