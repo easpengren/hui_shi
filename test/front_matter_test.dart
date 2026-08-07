@@ -125,6 +125,68 @@ void main() {
     });
   });
 
+
+  group('dropFrontMatter treats a contents list as a region', () {
+    // Chunks here are sentences, so a contents list is many chunks and only
+    // the heading matches a pattern on its own. Per-chunk filtering left every
+    // entry behind; the region rule is what removes them.
+    List<String> frontMatter() => [
+          'THE PROTRACTED GAME',
+          'BY SCOTT A. BOORMAN',
+          'Copyright © 1969 by Oxford University Press, Inc.',
+          'All rights reserved.',
+          'Published simultaneously in Canada by Oxford University Press.',
+          'Printed in the United States of America',
+          '10 9 8 7 6 5 4 3 2 1',
+          'To my parents',
+          'CONTENTS',
+          'Introduction, 3',
+          "1. The Game of Wei-ch'i, 11",
+          '2. The Model, 24',
+          'PREFACE',
+          'This study grew out of an attempt to understand the strategy of the '
+              'Chinese Communist movement during the years 1927 to 1949.',
+        ];
+
+    test('the contents entries go, not just the heading', () {
+      final kept = dropFrontMatter(frontMatter());
+      for (final gone in ['CONTENTS', 'Introduction, 3', '2. The Model, 24']) {
+        expect(kept, isNot(contains(gone)), reason: gone);
+      }
+    });
+
+    test('copyright lines with no marker of their own still go', () {
+      expect(
+        dropFrontMatter(frontMatter()),
+        isNot(contains(
+            'Published simultaneously in Canada by Oxford University Press.')),
+      );
+    });
+
+    test('the title page and dedication are kept, as chosen', () {
+      final kept = dropFrontMatter(frontMatter());
+      expect(kept, contains('THE PROTRACTED GAME'));
+      expect(kept, contains('BY SCOTT A. BOORMAN'));
+      expect(kept, contains('To my parents'));
+    });
+
+    test('the book itself starts the moment the list ends', () {
+      final kept = dropFrontMatter(frontMatter());
+      expect(kept, contains('PREFACE'));
+      expect(kept.last, startsWith('This study grew out of'));
+    });
+
+    test('a mid-book contents-shaped line survives', () {
+      // Outside the lead window nothing is dropped, so prose that happens to
+      // look like an entry is safe.
+      final chunks = <String>[
+        ...List.generate(200, (i) => 'Body sentence $i, long enough to read.'),
+        'Introduction, 3',
+      ];
+      expect(dropFrontMatter(chunks), contains('Introduction, 3'));
+    });
+  });
+
   group('dropBoilerplate', () {
     test('removes it at the front', () {
       final chunks = ['All rights reserved.', 'ISBN 978-0-00-000000-0',

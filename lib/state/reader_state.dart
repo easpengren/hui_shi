@@ -133,7 +133,11 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     });
     _chunkSub = _playback.chunkStream.listen((e) {
       currentChunkIndex = e.index;
-      _saveProgress();
+      // Coalesced, not per-chunk: saving rewrites the whole library JSON, and
+      // at sentence granularity that fired every few seconds all through
+      // playback. Losing at most five seconds of position is not worth the
+      // jank it caused while listening.
+      _scheduleProgressSave();
       notifyListeners();
     });
     _errorSub = _playback.errorStream.listen((message) {
@@ -209,6 +213,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       result,
       existingId: entry.id,
       startChunk: entry.lastChunkIndex,
+      previousTotalChunks: entry.totalChunks,
     );
   }
 
@@ -344,6 +349,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     FileReadResult result, {
     String? existingId,
     int startChunk = 0,
+    int previousTotalChunks = 0,
   }) async {
     loadState = LoadState.loading;
     loadStatus = 'Preparing text...';
@@ -360,7 +366,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     rawText = cleanText(stripGutenbergWrapper(result.content));
     loadStatus = 'Chunking text...';
     notifyListeners();
-    chunks = _applyPageAnchors(dropBoilerplate(chunkText(rawText)));
+    chunks = _applyPageAnchors(dropFrontMatter(chunkText(rawText)));
 
     if (chunks.isEmpty) {
       if (result.type == SupportedFileType.pdf) {
@@ -376,9 +382,14 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    currentChunkIndex = startChunk.clamp(
-      0,
-      chunks.isEmpty ? 0 : chunks.length - 1,
+    // The saved index was recorded against whatever chunking was in force
+    // then, and chunking has changed — improving the sentence splitter alone
+    // moved this book by 22%. Rescale by the stored total so a saved place
+    // still points at the same part of the book.
+    currentChunkIndex = rescaleChunkIndex(
+      index: startChunk,
+      oldTotal: previousTotalChunks,
+      newTotal: chunks.length,
     );
 
     await _playback.load(bookId, chunks, startIndex: currentChunkIndex);
@@ -428,7 +439,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
           : null;
 
       rawText = '${rawText.trim()} $cleaned'.trim();
-      final newChunks = _applyPageAnchors(dropBoilerplate(chunkText(rawText)));
+      final newChunks = _applyPageAnchors(dropFrontMatter(chunkText(rawText)));
       if (newChunks.isEmpty) return;
 
       var newIndex = currentChunkIndex;
@@ -482,6 +493,27 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {
       // Keep the partial document available even if continuation fails.
     }
+  }
+
+  Timer? _progressSaveTimer;
+
+  /// Save the reading position soon, and at most once every few seconds.
+  ///
+  /// [_saveProgress] does a read-modify-write of the entire library: it decodes
+  /// every entry from shared preferences, replaces one, and re-encodes the lot.
+  /// Doing that on every chunk boundary is a platform round-trip and two JSON
+  /// passes per sentence, for a number that only matters when playback stops.
+  void _scheduleProgressSave() {
+    _progressSaveTimer ??=
+        Timer(const Duration(seconds: 5), _flushProgressSave);
+  }
+
+  /// Write the position now — on pause, stop, or teardown, where the next
+  /// scheduled save might never arrive.
+  void _flushProgressSave() {
+    _progressSaveTimer?.cancel();
+    _progressSaveTimer = null;
+    unawaited(_saveProgress());
   }
 
   Future<void> _saveProgress() async {

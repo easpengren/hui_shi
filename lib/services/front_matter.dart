@@ -172,3 +172,97 @@ List<int> gutenbergBodyIndices(List<String> paragraphs) {
   if (first >= last) return List<int>.generate(paragraphs.length, (i) => i);
   return [for (var i = first; i < last; i++) i];
 }
+
+/// A line that belongs to a contents list rather than the book.
+///
+/// Only ever consulted *inside* a contents region — on its own, "Introduction,
+/// 3" is too weak a signal to delete anything.
+bool looksLikeTocEntry(String chunk) {
+  final text = chunk.trim();
+  if (text.isEmpty || text.length > 90) return false;
+  // "Introduction, 3" / "The Model .... 24" / "Chapter One 47"
+  if (RegExp(r'[.,\s]\s*\d{1,4}$').hasMatch(text)) return true;
+  // "1. The Game of Wei-ch'i" with no page number.
+  if (RegExp(r"^(chapter\s+)?[ivxlcdm\d]{1,5}[.)]\s+\S", caseSensitive: false)
+      .hasMatch(text)) {
+    return true;
+  }
+  return false;
+}
+
+/// A heading that opens a contents list.
+bool isContentsHeading(String chunk) => RegExp(r'^(table of )?contents\b',
+    caseSensitive: false).hasMatch(chunk.trim());
+
+/// Prose: long enough, and punctuated like a sentence. Ends a contents region.
+bool _isProse(String chunk) {
+  final text = chunk.trim();
+  return text.length > 120 && RegExp(r'[.!?]$').hasMatch(text);
+}
+
+/// Publisher lines a copyright page carries that name no ISBN or ©.
+final _publisherLineRegex = RegExp(
+  r'\bpublished (simultaneously|by|in)\b'
+  r'|\buniversity press\b'
+  r'|\ball rights reserved\b',
+  caseSensitive: false,
+);
+
+/// Remove a book's front and back matter.
+///
+/// Region-aware, which per-chunk filtering cannot be: chunks here are
+/// sentences, so a copyright page or a contents list is many chunks and only
+/// the one carrying "©" or "Contents" matches a pattern on its own. The rest —
+/// "Published simultaneously in Canada", "1. The Game of Wei-ch'i, 11" — look
+/// like ordinary short lines unless you know what preceded them.
+///
+/// So a contents *heading* opens a region, and every entry-shaped line after it
+/// goes until real prose or a section heading arrives. That is how a reader
+/// skips a contents list: not by recognising each line, but by knowing where
+/// the list started and where it stopped.
+///
+/// [leadWindow] is generous because front matter is: title, copyright,
+/// dedication, contents and a preface can run well past a hundred sentences.
+/// [tailWindow] is tighter — back matter is usually just a colophon.
+List<String> dropFrontMatter(
+  List<String> chunks, {
+  int leadWindow = 150,
+  int tailWindow = 60,
+}) {
+  if (chunks.isEmpty) return chunks;
+
+  final kept = <String>[];
+  var inContents = false;
+
+  for (var i = 0; i < chunks.length; i++) {
+    final chunk = chunks[i];
+    final nearFront = i < leadWindow;
+    final nearBack = i >= chunks.length - tailWindow;
+
+    if (nearFront) {
+      if (isContentsHeading(chunk) || isTableOfContents(chunk)) {
+        inContents = true;
+        continue;
+      }
+      if (inContents) {
+        if (looksLikeTocEntry(chunk)) continue;
+        // Anything else ends the list — the book has started.
+        if (_isProse(chunk) || chunk.trim().length > 90) inContents = false;
+        if (looksLikeTocEntry(chunk)) continue;
+      }
+      if (isPublisherBoilerplate(chunk) ||
+          _publisherLineRegex.hasMatch(chunk)) {
+        continue;
+      }
+    } else if (nearBack &&
+        (isPublisherBoilerplate(chunk) || isTableOfContents(chunk))) {
+      continue;
+    }
+
+    kept.add(chunk);
+  }
+
+  // A document that is entirely front matter is a misjudgement, not a book
+  // with no content.
+  return kept.isEmpty ? chunks : kept;
+}

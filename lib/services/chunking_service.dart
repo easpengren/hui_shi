@@ -269,3 +269,25 @@ List<String> _splitBySentence(String text, int maxLen) {
   if (buffer.isNotEmpty) chunks.add(buffer.toString().trim());
   return chunks.where((c) => c.isNotEmpty).toList();
 }
+
+/// Map a saved position onto a re-chunked document.
+///
+/// A reading position is persisted as a bare chunk index, so any change to
+/// chunking silently moves everyone's saved place. `LibraryEntry` also stores
+/// the chunk count it was saved against, which is enough to rescale
+/// proportionally — the position lands in the same *part* of the book even
+/// though the index means something different now.
+///
+/// This exists so chunking can be improved again later without stranding
+/// readers mid-book.
+int rescaleChunkIndex({
+  required int index,
+  required int oldTotal,
+  required int newTotal,
+}) {
+  if (newTotal <= 0) return 0;
+  if (oldTotal <= 0 || oldTotal == newTotal) {
+    return index.clamp(0, newTotal - 1);
+  }
+  return (index * newTotal / oldTotal).round().clamp(0, newTotal - 1);
+}
