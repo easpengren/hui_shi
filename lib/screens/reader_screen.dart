@@ -153,6 +153,16 @@ class ReaderScreen extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            // Page navigation appears only when the source carried real page
+            // numbers. A book without them shows nothing, rather than a
+            // control that jumps to a page the printed edition never had.
+            if (state.hasPages)
+              TextButton(
+                onPressed: () => _goToPage(context, state),
+                child: Text(
+                  state.currentPage == null ? 'Page' : 'p. ${state.currentPage}',
+                ),
+              ),
             IconButton(
               icon: Icon(
                 state.themeMode == ThemeMode.dark
@@ -832,6 +842,60 @@ class _PlaybackBar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Ask for a page of the printed book and go there.
+///
+/// Only reachable when the book carries page numbers. A page it does not have
+/// is reported rather than silently seeking somewhere near — the point of
+/// navigating by page is landing where the physical book does.
+Future<void> _goToPage(BuildContext context, ReaderState state) async {
+  final controller = TextEditingController(text: state.currentPage ?? '');
+  final labels = state.pageLabels;
+  final entered = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Go to page'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Page'),
+            onSubmitted: (v) => Navigator.pop(context, v),
+          ),
+          if (labels.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'This edition runs ${labels.first}\u2013${labels.last}.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: const Text('Go'),
+        ),
+      ],
+    ),
+  );
+
+  if (entered == null || entered.trim().isEmpty) return;
+  final found = await state.goToPage(entered);
+  if (!found && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No page ${entered.trim()} in this book.')),
     );
   }
 }

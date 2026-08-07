@@ -10,6 +10,8 @@ import '../models/book.dart';
 import '../models/tts_engine.dart';
 import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
+import '../services/front_matter.dart';
+import '../services/page_map.dart';
 import '../services/file_reader_service.dart';
 import '../services/library_service.dart';
 import '../services/text_cleaner.dart';
@@ -37,6 +39,11 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   String title = '';
   String rawText = '';
   List<String> chunks = [];
+
+  /// Page navigation, when the source carried real page numbers. Empty
+  /// otherwise — pages are never inferred from position. See page_map.dart.
+  Map<String, int> pageChunkStarts = const <String, int>{};
+  List<String?> chunkPages = const <String?>[];
   int currentChunkIndex = 0;
   PlaybackStatus playbackStatus = PlaybackStatus.idle;
   TtsEngine selectedEngine = TtsEngine.system;
@@ -347,10 +354,13 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
 
     bookId = existingId ?? const Uuid().v4();
     title = result.title;
-    rawText = cleanText(result.content);
+    // Drop the parts of the file that are not the book: the Project Gutenberg
+    // wrapper (exact, by its markers) and publisher front/back matter plus the
+    // table of contents (heuristic, edges only). See front_matter.dart.
+    rawText = cleanText(stripGutenbergWrapper(result.content));
     loadStatus = 'Chunking text...';
     notifyListeners();
-    chunks = chunkText(rawText);
+    chunks = _applyPageAnchors(dropBoilerplate(chunkText(rawText)));
 
     if (chunks.isEmpty) {
       if (result.type == SupportedFileType.pdf) {
@@ -409,7 +419,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
           notifyListeners();
         },
       );
-      final cleaned = cleanText(remainder);
+      final cleaned = cleanText(stripGutenbergWrapper(remainder));
       if (cleaned.isEmpty) return;
 
       final previousChunkText =
@@ -418,7 +428,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
           : null;
 
       rawText = '${rawText.trim()} $cleaned'.trim();
-      final newChunks = chunkText(rawText);
+      final newChunks = _applyPageAnchors(dropBoilerplate(chunkText(rawText)));
       if (newChunks.isEmpty) return;
 
       var newIndex = currentChunkIndex;
@@ -889,4 +899,39 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     }
     super.dispose();
   }
+
+  /// Lift [Pg N] markers out of freshly built chunks and record where each
+  /// printed page begins. Runs after every chunking, including the re-chunk
+  /// when another batch of a large PDF loads, so the map is never stale.
+  List<String> _applyPageAnchors(List<String> built) {
+    final paged = extractPageAnchors(built);
+    pageChunkStarts = paged.pageChunkStarts;
+    chunkPages = paged.chunkPages;
+    return paged.chunks;
+  }
+
+  /// Whether this book carries the printed edition's page numbers.
+  ///
+  /// False for most reflowable files, and the UI shows nothing rather than a
+  /// page control that cannot work.
+  bool get hasPages => pageChunkStarts.isNotEmpty;
+
+  /// Page labels in reading order.
+  List<String> get pageLabels => pageChunkStarts.keys.toList();
+
+  /// The printed page showing at the current position, or null.
+  String? get currentPage =>
+      currentChunkIndex >= 0 && currentChunkIndex < chunkPages.length
+          ? chunkPages[currentChunkIndex]
+          : null;
+
+  /// Jump to a page of the printed book. Returns false when the book has no
+  /// such page — the caller says so rather than seeking somewhere arbitrary.
+  Future<bool> goToPage(String label) async {
+    final target = pageChunkStarts[normalizePageLabel(label)];
+    if (target == null || target >= chunks.length) return false;
+    await seekToChunk(target);
+    return true;
+  }
+
 }
