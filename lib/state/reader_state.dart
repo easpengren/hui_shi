@@ -10,6 +10,7 @@ import '../models/book.dart';
 import '../models/tts_engine.dart';
 import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
+import '../services/front_matter.dart';
 import '../services/file_reader_service.dart';
 import '../services/library_service.dart';
 import '../services/text_cleaner.dart';
@@ -347,10 +348,13 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
 
     bookId = existingId ?? const Uuid().v4();
     title = result.title;
-    rawText = cleanText(result.content);
+    // Drop the parts of the file that are not the book: the Project Gutenberg
+    // wrapper (exact, by its markers) and publisher front/back matter plus the
+    // table of contents (heuristic, edges only). See front_matter.dart.
+    rawText = cleanText(stripGutenbergWrapper(result.content));
     loadStatus = 'Chunking text...';
     notifyListeners();
-    chunks = chunkText(rawText);
+    chunks = dropBoilerplate(chunkText(rawText));
 
     if (chunks.isEmpty) {
       if (result.type == SupportedFileType.pdf) {
@@ -409,7 +413,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
           notifyListeners();
         },
       );
-      final cleaned = cleanText(remainder);
+      final cleaned = cleanText(stripGutenbergWrapper(remainder));
       if (cleaned.isEmpty) return;
 
       final previousChunkText =
@@ -418,7 +422,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
           : null;
 
       rawText = '${rawText.trim()} $cleaned'.trim();
-      final newChunks = chunkText(rawText);
+      final newChunks = dropBoilerplate(chunkText(rawText));
       if (newChunks.isEmpty) return;
 
       var newIndex = currentChunkIndex;
