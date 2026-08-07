@@ -5,6 +5,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:epubx/epubx.dart';
 
 import 'package:lu_ji/utils/footer_stripper.dart';
+import 'page_map.dart';
 
 enum SupportedFileType { txt, pdf, epub }
 
@@ -141,10 +142,19 @@ class FileReaderService {
         break;
       }
     }
-    // Drop running headers/footers/page numbers before joining the pages.
+    // Capture the printed folio from each page BEFORE the header/footer
+    // stripper deletes it, and emit it as a [Pg N] marker line. The marker
+    // rides along in the text so it survives cleaning, chunking and the
+    // re-chunk that happens when another batch loads. See page_map.dart.
+    final labels = fillPageLabels(
+      [for (final p in pageTexts) printedPageNumberFromText(p)],
+    );
+    final strippedPages = stripRepeatedHeadersFooters(pageTexts);
     final buffer = StringBuffer();
-    for (final p in stripRepeatedHeadersFooters(pageTexts)) {
-      buffer.writeln(p);
+    for (var i = 0; i < strippedPages.length; i++) {
+      final label = i < labels.length ? labels[i] : null;
+      if (label != null) buffer.writeln(pageMarkerFor(label));
+      buffer.writeln(strippedPages[i]);
     }
     final text = buffer.toString();
     final sliced = text.length <= _maxExtractedChars
@@ -183,10 +193,19 @@ class FileReaderService {
       }
     }
 
-    // Same header/footer stripping as the first batch (they recur here too).
+    // Capture the printed folio from each page BEFORE the header/footer
+    // stripper deletes it, and emit it as a [Pg N] marker line. The marker
+    // rides along in the text so it survives cleaning, chunking and the
+    // re-chunk that happens when another batch loads. See page_map.dart.
+    final labels = fillPageLabels(
+      [for (final p in pageTexts) printedPageNumberFromText(p)],
+    );
+    final strippedPages = stripRepeatedHeadersFooters(pageTexts);
     final buffer = StringBuffer();
-    for (final p in stripRepeatedHeadersFooters(pageTexts)) {
-      buffer.writeln(p);
+    for (var i = 0; i < strippedPages.length; i++) {
+      final label = i < labels.length ? labels[i] : null;
+      if (label != null) buffer.writeln(pageMarkerFor(label));
+      buffer.writeln(strippedPages[i]);
     }
     return buffer.toString();
   }
@@ -206,7 +225,9 @@ class FileReaderService {
 
   void _appendChapter(EpubChapter chapter, StringBuffer buffer) {
     if (chapter.HtmlContent != null) {
-      final text = chapter.HtmlContent!
+      // Rewrite print-edition page anchors to [Pg N] before the tags go, so
+      // they survive into the text like a PDF's folios do.
+      final text = markPageBreaksInHtml(chapter.HtmlContent!)
           .replaceAll(RegExp(r'<[^>]+>'), ' ')
           .replaceAll('&nbsp;', ' ')
           .replaceAll('&amp;', '&')
