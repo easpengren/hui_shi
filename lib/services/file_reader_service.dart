@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:epubx/epubx.dart';
+import 'page_map.dart';
 
 import '../models/document.dart';
 import 'pdf_reflow.dart';
@@ -17,11 +18,19 @@ class FileReadResult {
   final List<Chapter> chapters;
   final SupportedFileType type;
 
+  /// Global paragraph index -> the page of the printed book beginning there.
+  ///
+  /// Empty when the source carried no page information, which is the normal
+  /// state for a reflowable file. Recorded against paragraphs rather than
+  /// chunks because chunking is not stable — see page_map.dart.
+  final Map<int, String> pageStarts;
+
   const FileReadResult({
     required this.path,
     required this.title,
     required this.chapters,
     required this.type,
+    this.pageStarts = const <int, String>{},
   });
 
   /// Flattened plain text — bridge for the existing TTS chunking path while the
@@ -72,26 +81,33 @@ class FileReaderService {
     switch (ext) {
       case 'txt':
         final raw = await File(path).readAsString();
+        // Scanned plain text sometimes keeps the original's [Pg N] markers.
+        final (paragraphs, pageStarts) =
+            extractInlinePageMarkers(_splitParagraphs(raw));
         return FileReadResult(
           path: path,
           title: titleFromFilename,
-          chapters: [Chapter(title: titleFromFilename, paragraphs: _splitParagraphs(raw))],
+          chapters: [Chapter(title: titleFromFilename, paragraphs: paragraphs)],
           type: SupportedFileType.txt,
+          pageStarts: pageStarts,
         );
       case 'pdf':
+        final (pdfChapters, pdfPages) = await _extractPdf(path);
         return FileReadResult(
           path: path,
           title: titleFromFilename,
-          chapters: await _extractPdf(path),
+          chapters: pdfChapters,
           type: SupportedFileType.pdf,
+          pageStarts: pdfPages,
         );
       case 'epub':
-        final (title, chapters) = await _extractEpub(path);
+        final (title, chapters, epubPages) = await _extractEpub(path);
         return FileReadResult(
           path: path,
           title: title.isNotEmpty ? title : titleFromFilename,
           chapters: chapters,
           type: SupportedFileType.epub,
+          pageStarts: epubPages,
         );
       default:
         return null;
@@ -106,7 +122,7 @@ class FileReaderService {
   // pdf_reflow.dart). Chapters come from the PDF's embedded outline (its real
   // table of contents) when it has one; only when there's no usable outline do
   // we fall back to one section per page ("Page N").
-  Future<List<Chapter>> _extractPdf(String path) async {
+  Future<(List<Chapter>, Map<int, String>)> _extractPdf(String path) async {
     final doc = await PdfDocument.openFile(path);
     try {
       // Reflow every page into clean paragraphs (header/footer detection needs
@@ -139,17 +155,29 @@ class FileReaderService {
           _fromReflowChapters(chaptersByHeading(pageLines, runningHeaders: running)) ??
           _chaptersPerPage(pageParagraphs);
 
+      // The printed folio, not the sheet index — they differ by the whole of
+      // the front matter. Every chaptering strategy above consumes
+      // pageParagraphs in order, so a global paragraph count taken here lines
+      // up with the concatenated chapters; _pageAnchors checks that it does.
+      final labels = fillPageLabels(
+        [for (final lines in pageLines) printedPageNumber(lines)],
+      );
+      final pageStarts = _pageAnchors(pageParagraphs, labels, chapters);
+
       if (chapters.isEmpty) {
         // No selectable text anywhere — almost always a scanned/image PDF.
-        return [
+        return (
+          [
           Chapter(title: 'No selectable text', paragraphs: const [
             'This PDF has no selectable text — it looks like scanned images. '
                 'Read-aloud needs a text layer, so this file can’t be read aloud '
                 'without an OCR step.',
           ]),
-        ];
+          ],
+          const <int, String>{}
+        );
       }
-      return chapters;
+      return (chapters, pageStarts);
     } finally {
       doc.dispose();
     }
@@ -161,6 +189,32 @@ class FileReaderService {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// Map each page's first paragraph to that page's printed number.
+  ///
+  /// Returns nothing at all if the chaptered paragraph count disagrees with the
+  /// per-page count: the anchors would be silently off, and a page button that
+  /// jumps to the wrong place is worse than one that is absent.
+  Map<int, String> _pageAnchors(
+    List<List<String>> pageParagraphs,
+    List<String?> labels,
+    List<Chapter> chapters,
+  ) {
+    final chaptered = chapters.fold<int>(0, (n, c) => n + c.paragraphs.length);
+    final perPage = pageParagraphs.fold<int>(0, (n, p) => n + p.length);
+    if (chaptered != perPage) return const <int, String>{};
+
+    final anchors = <int, String>{};
+    var global = 0;
+    for (var i = 0; i < pageParagraphs.length; i++) {
+      final label = i < labels.length ? labels[i] : null;
+      if (pageParagraphs[i].isNotEmpty && label != null) {
+        anchors.putIfAbsent(global, () => label);
+      }
+      global += pageParagraphs[i].length;
+    }
+    return anchors;
   }
 
   /// Depth-first flatten of the outline into (title, 0-based page) in reading
@@ -240,16 +294,29 @@ class FileReaderService {
   }
 
   // ── EPUB ────────────────────────────────────────────────────────────────────
-  Future<(String, List<Chapter>)> _extractEpub(String path) async {
+  Future<(String, List<Chapter>, Map<int, String>)> _extractEpub(
+      String path) async {
     final bytes = await File(path).readAsBytes();
     final book = await EpubReader.readBook(bytes);
     final title = book.Title ?? '';
     final chapters = <Chapter>[];
 
+    // Books carrying a print-edition mapping mark it with pagebreak anchors.
+    // Rewriting them as inline [Pg N] before the tags are stripped means EPUB
+    // and plain text share one extraction path.
+    final pageStarts = <int, String>{};
+    var globalParagraph = 0;
+
     void walk(EpubChapter ch) {
-      final paragraphs =
-          ch.HtmlContent != null ? _htmlToParagraphs(ch.HtmlContent!) : const <String>[];
+      final raw = ch.HtmlContent != null
+          ? _htmlToParagraphs(markPageBreaksInHtml(ch.HtmlContent!))
+          : const <String>[];
+      final (paragraphs, anchors) = extractInlinePageMarkers(raw);
       if (paragraphs.isNotEmpty) {
+        anchors.forEach((i, label) {
+          pageStarts.putIfAbsent(globalParagraph + i, () => label);
+        });
+        globalParagraph += paragraphs.length;
         final t = (ch.Title ?? '').trim();
         chapters.add(Chapter(
           title: t.isNotEmpty ? t : 'Chapter ${chapters.length + 1}',
@@ -264,7 +331,7 @@ class FileReaderService {
     for (final ch in book.Chapters ?? const <EpubChapter>[]) {
       walk(ch);
     }
-    return (title, chapters);
+    return (title, chapters, pageStarts);
   }
 
   /// Turn an HTML chapter body into paragraphs: insert breaks at block

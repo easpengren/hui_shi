@@ -158,4 +158,59 @@ void main() {
       expect(chaptersByHeading(pages), isNull);
     });
   });
+
+  group('printedPageNumber', () {
+    // The number in the book, not the sheet in the file — they differ by the
+    // whole of the front matter, which is exactly what makes "go to page 213"
+    // land in the right place.
+    test('reads a folio at the foot of the page', () {
+      expect(
+        printedPageNumber([
+          line('CHAPTER ONE', 700),
+          line('It was a bright cold day in April.', 650),
+          line('213', 60),
+        ]),
+        '213',
+      );
+    });
+
+    test('prefers the foot when a running head also looks numeric', () {
+      // Lines arrive top-first; the last candidate wins.
+      expect(
+        printedPageNumber([
+          line('12', 720),
+          line('Body text here.', 650),
+          line('213', 60),
+        ]),
+        '213',
+      );
+    });
+
+    test('roman folios in front matter', () {
+      expect(printedPageNumber([line('Preface', 700), line('xiv', 60)]), 'xiv');
+    });
+
+    test('strips a "Page" or "p." prefix', () {
+      expect(printedPageNumber([line('Page 45', 60)]), '45');
+      expect(printedPageNumber([line('p. 45', 60)]), '45');
+    });
+
+    test('a page with no folio returns null', () {
+      // Chapter openers usually omit it; fillPageLabels carries the sequence.
+      expect(
+        printedPageNumber([
+          line('CHAPTER ONE', 700),
+          line('It was a bright cold day in April.', 650),
+        ]),
+        isNull,
+      );
+    });
+
+    test('body text is never mistaken for a folio', () {
+      expect(
+        printedPageNumber([line('There were 213 of them in all.', 650)]),
+        isNull,
+      );
+    });
+  });
 }
