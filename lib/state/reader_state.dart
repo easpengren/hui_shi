@@ -146,6 +146,7 @@ class ReaderState extends ChangeNotifier {
       result,
       existingId: entry.id,
       startChunk: entry.lastChunkIndex,
+      previousTotalChunks: entry.totalChunks,
     );
   }
 
@@ -180,6 +181,7 @@ class ReaderState extends ChangeNotifier {
     FileReadResult result, {
     String? existingId,
     int startChunk = 0,
+    int previousTotalChunks = 0,
   }) async {
     loadState = LoadState.loading;
     notifyListeners();
@@ -204,9 +206,12 @@ class ReaderState extends ChangeNotifier {
       chapters = [Chapter(title: title, paragraphs: chunks)];
     }
 
-    currentChunkIndex = startChunk.clamp(
-      0,
-      chunks.isEmpty ? 0 : chunks.length - 1,
+    // The saved index was recorded against a possibly different chunking;
+    // rescale so an improvement to chunking never strands a reader mid-book.
+    currentChunkIndex = rescaleChunkIndex(
+      index: startChunk,
+      oldTotal: previousTotalChunks,
+      newTotal: chunks.length,
     );
 
     await _playback.load(bookId, chunks, startIndex: currentChunkIndex);
