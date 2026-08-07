@@ -3,9 +3,25 @@ import 'package:provider/provider.dart';
 import '../models/book.dart';
 import '../state/reader_state.dart';
 import '../widgets/classical_chrome.dart';
+import 'app_update_ui.dart';
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Quiet update check on launch: silent when already current or when the
+    // network is unavailable, so it never interrupts opening a book.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkAndOfferUpdate(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -14,6 +30,11 @@ class LibraryScreen extends StatelessWidget {
         appBar: AppBar(
           title: const Text('Library'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.system_update_outlined),
+              tooltip: 'Check for updates',
+              onPressed: () => checkAndOfferUpdate(context, manual: true),
+            ),
             IconButton(
               icon: Icon(
                 state.themeMode == ThemeMode.dark

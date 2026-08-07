@@ -83,3 +83,21 @@ jobs:
           mkdir -p "$DEST"
           cp build/app/outputs/flutter-apk/app-release.apk "$DEST/luji-latest.apk"
           echo "APK available at https://confucius.monolithstudio.art/downloads/luji-latest.apk"
+
+      # The manifest the in-app updater polls. Must sit beside the APK and name
+      # the same file, or the app will offer an update it cannot download.
+      - name: Publish update manifest
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          DEST=/root/hetzner_hosting_setup/srv/data/www/confucius
+          cat > "$DEST/luji-latest.json" <<JSON
+          {
+            "version_code": ${{ github.run_number }},
+            "version_name": "1.0.${{ github.run_number }}",
+            "apk_url": "https://confucius.monolithstudio.art/downloads/luji-latest.apk",
+            "notes": "$SHA",
+            "published_at": "$DATE"
+          }
+          JSON
+          echo "Manifest: $(cat "$DEST/luji-latest.json")"
