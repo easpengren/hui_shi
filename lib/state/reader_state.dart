@@ -83,7 +83,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      _saveProgress();
+      _flushProgressSave();
     }
   }
 
@@ -369,6 +369,11 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     int startChunk = 0,
     int previousTotalChunks = 0,
   }) async {
+    // Whatever was open keeps its place: a pending throttled save would
+    // otherwise be discarded the moment bookId changes below, which is exactly
+    // "I opened another book and the first one restarted".
+    _flushProgressSave();
+
     loadState = LoadState.loading;
     loadStatus = 'Preparing text...';
     notifyListeners();
@@ -578,6 +583,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> pause() async {
     await _ensureReady();
     await _playback.pause();
+    _flushProgressSave();
   }
 
   Future<void> resume() async {
@@ -588,10 +594,12 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> stop() async {
     await _ensureReady();
     await _playback.stop();
+    _flushProgressSave();
   }
 
   Future<void> seekToChunk(int index) async {
     await _ensureReady();
+    _scheduleProgressSave();
     await _playback.seekToChunk(index);
   }
 
@@ -941,6 +949,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _flushProgressSave();
     WidgetsBinding.instance.removeObserver(this);
     _statusSub?.cancel();
     _chunkSub?.cancel();

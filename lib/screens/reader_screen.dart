@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../models/tts_engine.dart';
@@ -160,7 +161,9 @@ class ReaderScreen extends StatelessWidget {
               TextButton(
                 onPressed: () => _goToPage(context, state),
                 child: Text(
-                  state.currentPage == null ? 'Page' : 'p. ${state.currentPage}',
+                  state.currentPage == null
+                      ? 'Page'
+                      : 'p. ${state.currentPage}',
                 ),
               ),
             IconButton(
@@ -240,6 +243,7 @@ class _ContentAreaState extends State<_ContentArea> {
   final List<int> _searchMatches = [];
   int _searchMatchPos = -1;
   int _lastScrolledIndex = -1;
+  DateTime? _lastManualScroll;
   String _lastSearchQuery = '';
 
   @override
@@ -259,9 +263,21 @@ class _ContentAreaState extends State<_ContentArea> {
     super.initState();
   }
 
+  /// How long a hand on the screen wins over the follow-along.
+  static const _manualScrollGrace = Duration(seconds: 6);
+
+  bool get _readerIsScrolling {
+    final at = _lastManualScroll;
+    return at != null && DateTime.now().difference(at) < _manualScrollGrace;
+  }
+
   void _maybeScrollToCurrent({bool force = false}) {
     final idx = widget.state.currentChunkIndex;
     if (!force && idx == _lastScrolledIndex) return;
+    // Don't fight the reader: while they are scrolling, and for a few seconds
+    // after, the follow-along stays out of the way. Without this, every chunk
+    // boundary yanked the view back and reading ahead was impossible.
+    if (!force && _readerIsScrolling) return;
     if (widget.state.chunks.isEmpty || idx >= widget.state.chunks.length) {
       return;
     }
@@ -345,18 +361,14 @@ class _ContentAreaState extends State<_ContentArea> {
     _scrollToIndex(idx, animated: true);
   }
 
-  TextSpan _buildChunkSpan(
-    BuildContext context,
-    String chunk,
-    bool isCurrent,
-  ) {
+  TextSpan _buildChunkSpan(BuildContext context, String chunk, bool isCurrent) {
     final query = _searchController.text.trim();
     final baseStyle = TextStyle(
       fontSize: 17,
       height: 1.6,
-      color: Theme.of(context).colorScheme.onSurface.withValues(
-        alpha: isCurrent ? 1.0 : 0.75,
-      ),
+      color: Theme.of(
+        context,
+      ).colorScheme.onSurface.withValues(alpha: isCurrent ? 1.0 : 0.75),
     );
     if (query.isEmpty) {
       return TextSpan(text: chunk, style: baseStyle);
@@ -528,39 +540,50 @@ class _ContentAreaState extends State<_ContentArea> {
             // SelectionArea makes the body text selectable/copyable across
             // chunks (drag to select, long-press for the copy toolbar) while a
             // plain tap still falls through to the per-chunk seek-and-play.
-            child: SelectionArea(
-              child: ScrollablePositionedList.builder(
-                itemScrollController: _itemScrollController,
-                itemPositionsListener: _itemPositionsListener,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                itemCount: state.chunks.length,
-                itemBuilder: (context, index) {
-                  final isCurrent = index == state.currentChunkIndex;
-                  return GestureDetector(
-                    onTap: () => state.seekAndPlay(index),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isCurrent
-                            ? Theme.of(
-                                context,
-                              ).colorScheme.secondary.withValues(alpha: 0.25)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      // Text.rich (not RichText) so SelectionArea can select it.
-                      child: Text.rich(
-                        _buildChunkSpan(
-                          context,
-                          state.chunks[index],
-                          isCurrent,
+            child: NotificationListener<UserScrollNotification>(
+              onNotification: (notification) {
+                if (notification.direction != ScrollDirection.idle) {
+                  _lastManualScroll = DateTime.now();
+                }
+                return false;
+              },
+              child: SelectionArea(
+                child: ScrollablePositionedList.builder(
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  itemCount: state.chunks.length,
+                  itemBuilder: (context, index) {
+                    final isCurrent = index == state.currentChunkIndex;
+                    return GestureDetector(
+                      onTap: () => state.seekAndPlay(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isCurrent
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.secondary.withValues(alpha: 0.25)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        // Text.rich (not RichText) so SelectionArea can select it.
+                        child: Text.rich(
+                          _buildChunkSpan(
+                            context,
+                            state.chunks[index],
+                            isCurrent,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ),
