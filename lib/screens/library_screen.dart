@@ -14,16 +14,6 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   @override
-  void initState() {
-    super.initState();
-    // Quiet update check on launch: silent when already current or when the
-    // network is unavailable, so it never interrupts opening a book.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) checkAndOfferUpdate(context);
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Consumer<ReaderState>(
       builder: (context, state, _) => Scaffold(

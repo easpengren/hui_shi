@@ -2,6 +2,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'playback/audio_handler.dart';
+import 'screens/app_update_ui.dart';
 import 'screens/about_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/reader_screen.dart';
@@ -36,13 +37,38 @@ void main() async {
   );
 }
 
-class LuJiApp extends StatelessWidget {
+class LuJiApp extends StatefulWidget {
   const LuJiApp({super.key});
+
+  @override
+  State<LuJiApp> createState() => _LuJiAppState();
+}
+
+class _LuJiAppState extends State<LuJiApp> {
+  /// Lets the launch update-check find a context under the MaterialApp without
+  /// belonging to any one screen.
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // At app start, not on a screen. This check used to live in
+    // LibraryScreen.initState — which is where it sits on the other lineage,
+    // where '/' IS the library. Here '/' is the reader, so it only ran if you
+    // happened to open the library, which is to say usually never.
+    //
+    // Quiet: silent when already current or when the network is unavailable.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _navigatorKey.currentContext;
+      if (context != null) checkAndOfferUpdate(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ReaderState>(
       builder: (context, state, _) => MaterialApp(
+        navigatorKey: _navigatorKey,
         title: 'Lu Ji',
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
