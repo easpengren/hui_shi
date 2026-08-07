@@ -8,6 +8,7 @@ import '../playback/audio_handler.dart';
 import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
 import '../services/file_reader_service.dart';
+import '../services/front_matter.dart';
 import '../services/library_service.dart';
 import '../services/text_cleaner.dart';
 import '../tts/piper_tts_client.dart';
@@ -198,10 +199,14 @@ class ReaderState extends ChangeNotifier {
     chapterChunkStarts = [];
     for (final ch in chapters) {
       chapterChunkStarts.add(chunks.length);
-      chunks.addAll(chunkText(cleanText(ch.text)));
+      chunks.addAll(
+        dropBoilerplate(chunkText(cleanText(stripGutenbergWrapper(ch.text)))),
+      );
     }
     if (chunks.isEmpty) {
-      chunks = chunkText(cleanText(result.content));
+      chunks = dropBoilerplate(
+        chunkText(cleanText(stripGutenbergWrapper(result.content))),
+      );
       chapterChunkStarts = [0];
       chapters = [Chapter(title: title, paragraphs: chunks)];
     }
