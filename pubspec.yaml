@@ -19,6 +19,9 @@ dependencies:
   # Audio playback (for Piper WAV output)
   just_audio: ^0.9.40
   audio_session: ^0.1.21
+  # Media session + foreground service: without it Android suspends
+  # the app when the screen goes off and playback dies.
+  audio_service: ^0.18.18
 
   # System TTS — wraps Android TextToSpeech + iOS AVSpeechSynthesizer
   flutter_tts: ^4.0.2

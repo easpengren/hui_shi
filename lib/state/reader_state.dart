@@ -12,6 +12,7 @@ import '../playback/playback_controller.dart';
 import '../services/chunking_service.dart';
 import '../services/front_matter.dart';
 import '../services/page_map.dart';
+import '../playback/audio_handler.dart';
 import '../services/file_reader_service.dart';
 import '../services/library_service.dart';
 import '../services/text_cleaner.dart';
@@ -21,6 +22,8 @@ import '../tts/system_tts_client.dart';
 enum LoadState { idle, loading, ready, error }
 
 class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
+  final LuJiAudioHandler? _handler;
+
   // ── Dependencies ──────────────────────────────────────────────────────────
   final FileReaderService _fileReader = FileReaderService();
   final LibraryService _library = LibraryService();
@@ -65,7 +68,9 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<ChunkEvent>? _chunkSub;
   StreamSubscription<String>? _errorSub;
 
-  ReaderState() {
+  /// [handler] is the media session. Nullable so tests and any other caller
+  /// can build a ReaderState without standing up a foreground service.
+  ReaderState({LuJiAudioHandler? handler}) : _handler = handler {
     WidgetsBinding.instance.addObserver(this);
     _ready = _init();
   }
@@ -127,8 +132,21 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     _playback.setEngine(selectedEngine);
     _playbackReady = true;
 
+    // Lock screen, notification and headset buttons drive the same controls
+    // the on-screen ones do.
+    _handler?.onPlay = () =>
+        playbackStatus == PlaybackStatus.paused ? resume() : play();
+    _handler?.onPause = pause;
+    _handler?.onStop = stop;
+    _handler?.onNext = () => seekToChunk(currentChunkIndex + 1);
+    _handler?.onPrevious = () => seekToChunk(currentChunkIndex - 1);
+
     _statusSub = _playback.statusStream.listen((s) {
       playbackStatus = s;
+      // Keeps the notification honest, and tells audio_service whether the
+      // foreground service should still be holding the app alive.
+      _handler?.setPlaying(s == PlaybackStatus.playing,
+          idle: s == PlaybackStatus.idle);
       notifyListeners();
     });
     _chunkSub = _playback.chunkStream.listen((e) {
@@ -392,6 +410,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       newTotal: chunks.length,
     );
 
+    _handler?.setNowPlaying(book: title, chapter: '');
     await _playback.load(bookId, chunks, startIndex: currentChunkIndex);
     _playback.setEngine(selectedEngine);
     _playback.setSpeed(playbackSpeed);

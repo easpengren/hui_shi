@@ -2,7 +2,7 @@ package com.example.lu_ji
 
 import android.content.Intent
 import android.os.Bundle
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -18,7 +18,11 @@ import io.flutter.plugin.common.MethodChannel
  * because a share can arrive before Dart is listening (cold start) or while it
  * already is (`onNewIntent`), and only the second can be pushed.
  */
-class MainActivity : FlutterActivity() {
+// AudioServiceActivity (not FlutterActivity, which it extends) so
+// audio_service's media session and foreground service bind correctly —
+// without it playback stops when the screen goes off. The share-intent
+// handling below is unaffected.
+class MainActivity : AudioServiceActivity() {
     private var pendingSharedText: String? = null
     private var channel: MethodChannel? = null
 
