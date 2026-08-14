@@ -21,13 +21,16 @@ class TtsCache {
     return sha1.convert(utf8.encode(raw)).toString();
   }
 
-  Future<File> _pathFor(String bookId, int chunkIndex, String voice) async {
+  /// Public so the system-TTS client can hand the path straight to
+  /// `synthesizeToFile`, which writes the file itself rather than returning
+  /// bytes for [put].
+  Future<File> pathFor(String bookId, int chunkIndex, String voice) async {
     final dir = await _dir();
     return File('${dir.path}/${_hash(bookId, chunkIndex, voice)}.wav');
   }
 
   Future<File?> get(String bookId, int chunkIndex, String voice) async {
-    final f = await _pathFor(bookId, chunkIndex, voice);
+    final f = await pathFor(bookId, chunkIndex, voice);
     return (f.existsSync() && f.lengthSync() > 0) ? f : null;
   }
 
@@ -37,7 +40,7 @@ class TtsCache {
     String voice,
     Uint8List wav,
   ) async {
-    final f = await _pathFor(bookId, chunkIndex, voice);
+    final f = await pathFor(bookId, chunkIndex, voice);
     await f.writeAsBytes(wav);
     return f;
   }

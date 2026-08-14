@@ -5,6 +5,7 @@ import '../models/tts_engine.dart';
 import '../services/text_cleaner.dart';
 import '../tts/piper_tts_client.dart';
 import '../tts/system_tts_client.dart';
+import '../tts/tts_cache.dart';
 
 enum PlaybackStatus { idle, loading, playing, paused }
 
@@ -18,6 +19,7 @@ class PlaybackController {
   final PiperTtsClient _piper;
   final SystemTtsClient _system;
   final AudioPlayer _player = AudioPlayer();
+  final TtsCache _systemCache = TtsCache();
 
   TtsEngine _engine = TtsEngine.system;
   PlaybackStatus _status = PlaybackStatus.idle;
@@ -94,16 +96,21 @@ class PlaybackController {
   Future<void> play() async {
     if (_chunks.isEmpty) return;
     _stopped = false;
-    if (_engine == TtsEngine.system) {
-      await _playSystem();
-    } else {
-      await _playPiper();
-    }
+    // Both engines go through just_audio now. That is what makes read-aloud a
+    // real media player: audio_service's foreground service is held up by
+    // *playback*, so an engine that speaks outside the player leaves the
+    // service with nothing to keep alive, and Android suspends it when the
+    // screen goes off. The lock-screen controls were equally empty for the same
+    // reason — they control the player, and the player was idle.
+    //
+    // _playSpoken below is kept as the fallback for devices whose TTS engine
+    // cannot synthesise to a file.
+    await _playSynthesized();
   }
 
-  // ── System TTS ────────────────────────────────────────────────────────────
+  // ── System TTS, spoken directly (fallback only) ───────────────────────────
 
-  Future<void> _playSystem() async {
+  Future<void> _playSpoken() async {
     _setStatus(PlaybackStatus.playing);
     try {
       for (var i = _currentIndex; i < _chunks.length; i++) {
@@ -124,9 +131,13 @@ class PlaybackController {
     }
   }
 
-  // ── Piper TTS (just_audio + progressive synthesis) ─────────────────────
+  // ── Synthesised playback (just_audio + progressive synthesis) ────────────
+  //
+  // Shared by both engines. Piper generates WAV via sherpa-onnx; the system
+  // engine writes one with synthesizeToFile. Either way just_audio owns the
+  // audio, which is what keeps the media session real.
 
-  Future<void> _playPiper() async {
+  Future<void> _playSynthesized() async {
     final sessionId = ++_playSession;
     _setStatus(PlaybackStatus.loading);
 
@@ -158,7 +169,7 @@ class PlaybackController {
       // Synthesize in background; start playback as soon as first chunk lands.
       _synthesizeAndAppend(_bookId!, _currentIndex, sessionId).ignore();
     } catch (e) {
-      _emitError('Piper playback setup failed: $e');
+      _emitError('Playback setup failed: $e');
       _setStatus(PlaybackStatus.idle);
     }
   }
@@ -177,8 +188,21 @@ class PlaybackController {
         if (sessionId != _playSession) break;
         final sanitized = sanitizeForTts(_chunks[i]);
         if (sanitized.isEmpty) continue;
-        final file = await _piper.synthesizeChunk(bookId, i, sanitized);
+        final file = _engine == TtsEngine.piper
+            ? await _piper.synthesizeChunk(bookId, i, sanitized)
+            : await _system.synthesizeChunk(bookId, i, sanitized, _systemCache);
         if (_stopped || sessionId != _playSession) break;
+        if (file == null) {
+          // The device's TTS engine will not synthesise to a file. Speaking
+          // directly is worse — it leaves the media session empty and dies on
+          // sleep — but it is far better than silence, and it is the only
+          // option on such a device.
+          if (!started && sessionId == _playSession) {
+            await _playSpoken();
+            return;
+          }
+          continue;
+        }
         await _playlist!.add(AudioSource.uri(Uri.file(file.path)));
         _playlistChunkIndexes.add(i);
         if (!started) {
@@ -189,12 +213,12 @@ class PlaybackController {
         }
       }
       if (!started && !_stopped && sessionId == _playSession) {
-        _emitError('Piper failed: no speakable text chunks were generated.');
+        _emitError('No speakable text chunks were generated.');
         _setStatus(PlaybackStatus.idle);
       }
     } catch (e) {
       if (sessionId == _playSession) {
-        _emitError('Piper synthesis failed: $e');
+        _emitError('Speech synthesis failed: $e');
         _setStatus(PlaybackStatus.idle);
       }
     }
@@ -205,32 +229,20 @@ class PlaybackController {
   Future<void> pause() async {
     if (_status != PlaybackStatus.playing) return;
     _setStatus(PlaybackStatus.paused);
-    if (_engine == TtsEngine.piper) {
-      await _player.pause();
-      return;
-    }
-
-    // flutter_tts pause/resume is not reliable on Android across engines.
-    // Stop current utterance and resume from the next chunk to avoid replaying
-    // from the start of the same chunk after every pause.
-    if (_currentIndex < _chunks.length - 1) {
-      _currentIndex += 1;
-      _emitChunk(_currentIndex);
-    }
-    _stopped = true;
+    // The player owns playback for both engines now, so pause is just pause —
+    // no more skipping a chunk to work around flutter_tts's unreliable
+    // pause/resume, which was only ever needed because it spoke outside the
+    // player.
+    await _player.pause();
+    // The spoken fallback has no pausable player, so it is stopped outright.
+    // Harmless when the player owns playback: flutter_tts is idle then anyway.
     await _system.stop();
   }
 
   Future<void> resume() async {
     if (_status != PlaybackStatus.paused) return;
-    if (_engine == TtsEngine.piper) {
-      _setStatus(PlaybackStatus.playing);
-      await _player.play();
-      return;
-    }
-
-    _stopped = false;
-    await _playSystem();
+    _setStatus(PlaybackStatus.playing);
+    await _player.play();
   }
 
   Future<void> stop() async {

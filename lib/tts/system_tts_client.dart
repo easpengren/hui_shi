@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+
+import 'tts_cache.dart';
 
 /// Wraps [FlutterTts] which uses:
 ///   • Android: Android TextToSpeech (Google TTS engine by default)
@@ -116,6 +119,55 @@ class SystemTtsClient {
       if (identical(_activeSpeakCompleter, completer)) {
         _activeSpeakCompleter = null;
       }
+    }
+  }
+
+  /// Render [text] to a WAV file instead of speaking it.
+  ///
+  /// This is what makes read-aloud survive the screen going off. `speak()` hands
+  /// the words to the platform speech engine, which plays them *outside*
+  /// `just_audio` — so `audio_service`'s foreground service has no audio to hold
+  /// up, Android suspends the engine on sleep, and the lock-screen controls have
+  /// nothing to control. Synthesising to a file and letting `just_audio` play it
+  /// makes the system engine behave exactly like Piper: real audio, inside the
+  /// media session.
+  ///
+  /// Returns null when the device's TTS engine cannot synthesise to a file —
+  /// support varies, and the caller falls back to [speak] rather than failing.
+  /// Same cache and signature as `PiperTtsClient.synthesizeChunk`, so both
+  /// engines share one playback path.
+  Future<File?> synthesizeChunk(
+    String bookId,
+    int chunkIndex,
+    String text,
+    TtsCache cache,
+  ) async {
+    if (!_supported) return null;
+    await init();
+
+    const voice = 'system';
+    final cached = await cache.get(bookId, chunkIndex, voice);
+    if (cached != null) return cached;
+
+    try {
+      final target = await cache.pathFor(bookId, chunkIndex, voice);
+      // Must be set before synthesising, or the call returns before the file
+      // is written and playback gets a zero-byte source.
+      await _tts.awaitSynthCompletion(true);
+      // Android wants a bare filename and writes to its own directory; iOS
+      // accepts a full path. Pass the full path and reconcile below.
+      final result = await _tts.synthesizeToFile(text, target.path);
+      if (result != 1) return null;
+      if (target.existsSync() && target.lengthSync() > 0) return target;
+
+      // Android ignored the path and used its own external files dir.
+      final produced = File(target.path.split('/').last);
+      if (produced.existsSync() && produced.lengthSync() > 0) return produced;
+      return null;
+    } catch (_) {
+      // An engine without synthesizeToFile support throws rather than
+      // returning a code. Not an error — the caller speaks instead.
+      return null;
     }
   }
 
