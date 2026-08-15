@@ -8,6 +8,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- Required from Android 14 for a mediaPlayback foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Required from Android 13, and load-bearing rather than cosmetic. A
+         mediaPlayback foreground service *is* its visible notification: with
+         this permission ungranted the notification is suppressed, the service
+         never counts as foreground, and Android suspends the process when the
+         screen goes off. Read-aloud stops mid-sentence, and the reading
+         position goes with it because the process dies before the debounced
+         save finishes. audio_service declares no permissions of its own, so
+         this has to be here. Declaring it is necessary but NOT sufficient —
+         it is a runtime permission; see playback/notification_permission.dart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Self-update: install the downloaded APK via the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 

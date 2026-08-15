@@ -2,6 +2,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'playback/audio_handler.dart';
+import 'playback/notification_permission.dart';
 import 'screens/app_update_ui.dart';
 import 'screens/about_screen.dart';
 import 'screens/library_screen.dart';
@@ -35,6 +36,15 @@ void main() async {
       child: const LuJiApp(),
     ),
   );
+
+  // After the first frame, not before it: this can show a system dialog, and
+  // one thrown up over a blank window looks like a crash. The permission it
+  // asks for is what lets read-aloud survive the screen going off — see
+  // playback/notification_permission.dart for why a *notification* permission
+  // decides whether audio keeps playing.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    requestNotificationPermission();
+  });
 }
 
 class LuJiApp extends StatefulWidget {

@@ -227,11 +227,16 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
+    // Prefer the fast position over the library entry's. The entry is only as
+    // fresh as the last debounced flush, so if the app was killed while
+    // playing — which is the case that loses your place — it is stale by
+    // however long playback ran after the last flush.
+    final fast = await _loadPositionFast(entry.id);
     await _loadDocument(
       result,
       existingId: entry.id,
-      startChunk: entry.lastChunkIndex,
-      previousTotalChunks: entry.totalChunks,
+      startChunk: fast?.index ?? entry.lastChunkIndex,
+      previousTotalChunks: fast?.total ?? entry.totalChunks,
     );
   }
 
@@ -528,8 +533,49 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
   /// Doing that on every chunk boundary is a platform round-trip and two JSON
   /// passes per sentence, for a number that only matters when playback stops.
   void _scheduleProgressSave() {
+    // The cheap write goes out now, every chunk. The debounce above is right
+    // about the *library* write being too expensive per sentence, but it left
+    // the position living only in memory between flushes — and the one moment
+    // the position matters most is a process death, which is exactly when the
+    // pending flush never runs. Two small ints per sentence is a different
+    // order of cost from decoding and re-encoding the whole library.
+    unawaited(_savePositionFast());
     _progressSaveTimer ??=
         Timer(const Duration(seconds: 5), _flushProgressSave);
+  }
+
+  static String _positionKey(String bookId) => 'pos:$bookId';
+  static String _positionTotalKey(String bookId) => 'posTotal:$bookId';
+
+  /// Write just the position, as two ints under a per-book key.
+  ///
+  /// Deliberately not part of the library JSON: this has to be survivable by a
+  /// process that Android kills without warning, so it must be the smallest
+  /// possible write, not one that first decodes every book the owner owns.
+  /// The total is stored alongside because the index is meaningless without it
+  /// — chunking changes between versions, and [rescaleChunkIndex] needs to know
+  /// what the index was counted against.
+  Future<void> _savePositionFast() async {
+    if (bookId.isEmpty || chunks.isEmpty) return;
+    final id = bookId;
+    final index = currentChunkIndex;
+    final total = chunks.length;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_positionKey(id), index);
+    await prefs.setInt(_positionTotalKey(id), total);
+  }
+
+  /// The most recent position for [bookId], or null if none was ever written.
+  ///
+  /// Preferred over the library entry when both exist: the library entry is
+  /// only as fresh as the last debounced flush, and this one is current to the
+  /// last sentence.
+  Future<({int index, int total})?> _loadPositionFast(String bookId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final index = prefs.getInt(_positionKey(bookId));
+    final total = prefs.getInt(_positionTotalKey(bookId));
+    if (index == null || total == null || total <= 0) return null;
+    return (index: index, total: total);
   }
 
   /// Write the position now — on pause, stop, or teardown, where the next
