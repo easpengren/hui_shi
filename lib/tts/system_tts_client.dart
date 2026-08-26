@@ -146,11 +146,11 @@ class SystemTtsClient {
     await init();
 
     const voice = 'system';
-    final cached = await cache.get(bookId, chunkIndex, voice);
+    final cached = await cache.get(bookId, chunkIndex, voice, _speed);
     if (cached != null) return cached;
 
     try {
-      final target = await cache.pathFor(bookId, chunkIndex, voice);
+      final target = await cache.pathFor(bookId, chunkIndex, voice, _speed);
       // Must be set before synthesising, or the call returns before the file
       // is written and playback gets a zero-byte source.
       await _tts.awaitSynthCompletion(true);

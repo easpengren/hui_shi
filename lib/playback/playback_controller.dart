@@ -69,8 +69,19 @@ class PlaybackController {
     if (_engine == TtsEngine.piper) {
       // Piper speed is baked into synthesis. Keep player at 1x to avoid
       // double-applying speed and causing mismatch vs. system voices.
-      final piperSpeed = (0.45 + (_uiSpeed * 0.9)).clamp(0.35, 2.2);
-      _piper.setSpeed(piperSpeed);
+      //
+      // The UI number is the Piper number. It used to be
+      // `0.45 + uiSpeed * 0.9`, which made the label dishonest in the one
+      // direction that matters: "0.5×" synthesised at 0.90× — near normal — and
+      // the slider's far left, 0.1×, still came out at 0.54×. There was no way
+      // to ask for genuinely slow speech, and the setting read as broken because
+      // it was: moving the lever to the end changed almost nothing.
+      //
+      // Sherpa's `speed` is a direct multiplier — lower is slower — so passing
+      // it through needs no mapping at all. The clamp matches the slider's own
+      // range rather than a wider one, because a value the UI cannot produce is
+      // a value nobody can debug.
+      _piper.setSpeed(_uiSpeed.clamp(0.1, 2.0));
       _player.setSpeed(1.0);
       return;
     }

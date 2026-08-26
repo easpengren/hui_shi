@@ -246,13 +246,13 @@ class PiperTtsClient {
     int chunkIndex,
     String text,
   ) async {
-    final cached = await _cache.get(bookId, chunkIndex, _voice);
+    final cached = await _cache.get(bookId, chunkIndex, _voice, _speed);
     if (cached != null) return cached;
 
     final engine = await _ensureEngine(_voice);
     final result = engine.generate(text: text, sid: 0, speed: _speed);
     final wav = float32ToWav(result.samples, result.sampleRate);
-    return _cache.put(bookId, chunkIndex, _voice, wav);
+    return _cache.put(bookId, chunkIndex, _voice, _speed, wav);
   }
 
   void dispose() {
