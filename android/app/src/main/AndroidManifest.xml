@@ -55,6 +55,17 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="text/plain"/>
             </intent-filter>
+            <!-- The same share, handed over as a content:// URI instead of an
+                 extra. A long chapter cannot travel as EXTRA_TEXT: the Binder
+                 transaction budget is about 1 MB, and 225,034 characters of the
+                 Platform Sutra threw TransactionTooLargeException and killed the
+                 process before Flutter started. A URI is a handle, so length
+                 stops mattering. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content" android:mimeType="text/plain"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

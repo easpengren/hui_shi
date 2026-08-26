@@ -3,6 +3,8 @@ package com.example.lu_ji
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.util.Log
 import android.os.Build
 import android.os.Bundle
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -98,10 +100,49 @@ class MainActivity : AudioServiceActivity() {
         )
     }
 
+    /**
+     * The shared text, however the sender managed to hand it over.
+     *
+     * `EXTRA_TEXT` is the ordinary path and stays first. It is also the one that
+     * breaks: an intent extra travels through a Binder transaction, and the whole
+     * transaction budget is about 1 MB shared with everything else in flight.
+     * Four Books handing over the Platform Sutra — 225,034 characters, a 668 KB
+     * parcel — produced
+     *
+     *     android.os.TransactionTooLargeException: data parcel size 683620 bytes
+     *     Second failure launching com.example.lu_ji/.MainActivity, giving up
+     *
+     * and the process died before Flutter ever started. From the outside that is
+     * a black screen and a bounce back to the sender, which is exactly what it
+     * looked like. Nothing here was at fault; this activity never ran.
+     *
+     * So a URI is accepted too — `EXTRA_STREAM`, or the intent's own data — and
+     * read through the ContentResolver. A `content://` URI is a handle, a few
+     * dozen bytes, and the size of the text stops mattering. The sender grants
+     * read access with FLAG_GRANT_READ_URI_PERMISSION; without it this throws
+     * SecurityException, which is caught and reported as "nothing to read"
+     * rather than a crash.
+     */
     private fun sharedTextOf(intent: Intent?): String? {
-        if (intent?.action != Intent.ACTION_SEND) return null
-        if (intent.type?.startsWith("text/") != true) return null
-        return intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf { it.isNotEmpty() }
+        if (intent?.action != Intent.ACTION_SEND && intent?.action != Intent.ACTION_VIEW) {
+            return null
+        }
+        intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { return it }
+
+        @Suppress("DEPRECATION")
+        val uri: Uri? = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: intent.data
+        if (uri == null) return null
+        return try {
+            contentResolver.openInputStream(uri)?.use { stream ->
+                stream.readBytes().toString(Charsets.UTF_8).trim().takeIf { it.isNotEmpty() }
+            }
+        } catch (error: Exception) {
+            // Revoked grant, deleted file, or a sender that forgot the flag. A
+            // share that cannot be read is nothing to read, not a crash.
+            Log.w("LuJi", "could not read shared text from $uri", error)
+            null
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
