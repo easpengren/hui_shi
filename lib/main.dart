@@ -16,15 +16,55 @@ void main() async {
   // The media session, and with it the foreground service that keeps
   // read-aloud alive once the screen goes off. Without this Android suspends
   // the app and playback simply stops mid-sentence.
-  final handler = await AudioService.init(
-    builder: LuJiAudioHandler.new,
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.lu_ji.playback',
-      androidNotificationChannelName: 'Lu Ji read-aloud',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
+  //
+  // ## Why this is guarded, and why it must never be un-guarded
+  //
+  // This `await` sits in front of `runApp`, so until it returns there is no
+  // Flutter UI at all — only the LaunchTheme window, which is to say a black
+  // screen. Unguarded, ANY failure or hang in the media session became the
+  // whole app failing to start, with nothing on screen to say so.
+  //
+  // That is not hypothetical. Launched from the launcher LuJi opened fine;
+  // launched by an explicit ACTION_SEND from Four Books it showed a black
+  // window and never recovered. A share arrives with the process and foreground
+  // state in a different condition than a launcher tap, and starting a
+  // `mediaPlayback` foreground service is exactly the kind of thing Android
+  // permits in one and refuses in the other.
+  //
+  // `LuJiAudioHandler` was already nullable — `ReaderState` calls it through
+  // `?.` everywhere — so a failure here costs the media session and nothing
+  // else: read-aloud still works while the app is in front, and only
+  // background survival, lock-screen controls and the notification are lost.
+  // A degraded reader beats a black screen, and the trade is not close.
+  //
+  // The timeout matters as much as the catch: a hang produces the identical
+  // black screen and `catch` alone would wait for it forever.
+  LuJiAudioHandler? handler;
+  try {
+    handler = await AudioService.init(
+      builder: LuJiAudioHandler.new,
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.example.lu_ji.playback',
+        androidNotificationChannelName: 'Lu Ji read-aloud',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+      ),
+    ).timeout(const Duration(seconds: 10));
+  } catch (error, stack) {
+    // Reported, not swallowed silently: without this the degradation is
+    // invisible and the next person debugging "why did background playback
+    // stop" has nothing to find.
+    FlutterError.reportError(FlutterErrorDetails(
+      exception: error,
+      stack: stack,
+      library: 'lu_ji',
+      context: ErrorDescription(
+        'AudioService.init failed; continuing without a media session. '
+        'Read-aloud will not survive the screen going off.',
+      ),
+    ));
+    handler = null;
+  }
   runApp(
     ChangeNotifierProvider(
       // #97: pick up text shared from another app — Confucius sends extracted
