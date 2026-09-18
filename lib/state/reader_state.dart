@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -312,7 +315,26 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         return;
       }
-      await _loadDocument(result);
+      // A re-shared text is the SAME text, so it resumes where it stopped.
+      //
+      // This used to fall through to `_loadDocument(result)` with no id and no
+      // start chunk, so `bookId` became a fresh uuid every time and playback
+      // began at chunk 0. The position was being saved correctly the whole
+      // time — under the previous uuid, which nothing would ever open again.
+      //
+      // Four Books hands a scripture over the same door Confucius uses for
+      // article prose (#97). An article arriving twice IS a new thing; a
+      // chapter of the Analects arriving twice is the one you were listening
+      // to yesterday. Keying on content rather than on arrival tells them
+      // apart without either side declaring which it is.
+      final id = sharedTextId(text);
+      final fast = await _loadPositionFast(id);
+      await _loadDocument(
+        result,
+        existingId: id,
+        startChunk: fast?.index ?? 0,
+        previousTotalChunks: fast?.total ?? 0,
+      );
     } catch (e, st) {
       debugPrint('[LuJi] openSharedText error: $e\n$st');
       errorMessage = e.toString();
@@ -321,10 +343,26 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// A stable id for shared text, derived from the text itself.
+  ///
+  /// The same chapter shared on Monday and Thursday is one book with one
+  /// reading position. Two different articles are two books, because their
+  /// content differs — which is the property the old timestamp was reaching
+  /// for and only approximated.
+  ///
+  /// Whitespace is normalised first: a handoff that re-wraps lines or gains a
+  /// trailing newline must not read as a different text.
+  static String sharedTextId(String text) {
+    final normalised = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return 'shared-${sha256.convert(utf8.encode(normalised)).toString().substring(0, 16)}';
+  }
+
   /// A recognisable, filesystem-safe name from the text's first line.
   ///
-  /// Uniquified, so sharing the same article twice does not silently reopen
-  /// the first copy and lose the new one.
+  /// Suffixed with the content hash rather than a timestamp: re-sharing the
+  /// same text reuses one file instead of leaving a copy per listen, and two
+  /// different texts that happen to open with the same line still get their
+  /// own.
   static String _sharedFileName(String text) {
     final firstLine = text.split('\n').firstWhere(
       (l) => l.trim().isNotEmpty,
@@ -337,7 +375,7 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
         .trim();
     final stem = (safe.isEmpty ? 'Shared text' : safe);
     final capped = stem.length <= 60 ? stem : stem.substring(0, 60).trim();
-    return '$capped ${DateTime.now().millisecondsSinceEpoch}.txt';
+    return '$capped ${sharedTextId(text).substring(7)}.txt';
   }
 
   Future<void> pickFile() async {
