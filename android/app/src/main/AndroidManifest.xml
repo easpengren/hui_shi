@@ -8,6 +8,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- Required from Android 14 for a mediaPlayback foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- The foreground service keeps the PROCESS alive; only a wake lock keeps
+         the CPU alive once the device dozes with the screen off. audio_service
+         acquires a PARTIAL_WAKE_LOCK on play and releases it on pause/stop
+         (AudioService.java), but PowerManager.acquire() needs this permission —
+         and, as noted below, audio_service declares none of its own. Without it
+         the acquire fails, the CPU suspends, and read-aloud stops the moment the
+         phone sleeps — taking the Piper synth-ahead isolate down with it, so
+         playback does not simply resume when the queue would next be fed. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Required from Android 13, and load-bearing rather than cosmetic. A
          mediaPlayback foreground service *is* its visible notification: with
          this permission ungranted the notification is suppressed, the service
