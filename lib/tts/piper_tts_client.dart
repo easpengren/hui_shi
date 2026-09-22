@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 import '../models/tts_engine.dart';
+import 'silence_trim.dart';
 import 'tts_cache.dart';
 import 'wav_utils.dart';
 
@@ -251,7 +252,11 @@ class PiperTtsClient {
 
     final engine = await _ensureEngine(_voice);
     final result = engine.generate(text: text, sid: 0, speed: _speed);
-    final wav = float32ToWav(result.samples, result.sampleRate);
+    // Trim the padding silence the model pads each utterance with, so chunks
+    // played back to back flow with a short gap instead of stacking into an
+    // unnatural pause at every boundary. See tts/silence_trim.dart.
+    final trimmed = trimSilenceSamples(result.samples, result.sampleRate);
+    final wav = float32ToWav(trimmed, result.sampleRate);
     return _cache.put(bookId, chunkIndex, _voice, _speed, wav);
   }
 

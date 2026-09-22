@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import 'silence_trim.dart';
 import 'tts_cache.dart';
 
 /// Wraps [FlutterTts] which uses:
@@ -158,17 +159,32 @@ class SystemTtsClient {
       // accepts a full path. Pass the full path and reconcile below.
       final result = await _tts.synthesizeToFile(text, target.path);
       if (result != 1) return null;
-      if (target.existsSync() && target.lengthSync() > 0) return target;
+      if (target.existsSync() && target.lengthSync() > 0) {
+        return _trimInPlace(target);
+      }
 
       // Android ignored the path and used its own external files dir.
       final produced = File(target.path.split('/').last);
-      if (produced.existsSync() && produced.lengthSync() > 0) return produced;
+      if (produced.existsSync() && produced.lengthSync() > 0) {
+        return _trimInPlace(produced);
+      }
       return null;
     } catch (_) {
       // An engine without synthesizeToFile support throws rather than
       // returning a code. Not an error — the caller speaks instead.
       return null;
     }
+  }
+
+  /// Trim the engine's padding silence from a freshly written clip, in place,
+  /// so system-TTS playback flows like the Piper path. Best-effort: on any
+  /// problem the file is returned untouched. See tts/silence_trim.dart.
+  Future<File> _trimInPlace(File f) async {
+    try {
+      final trimmed = trimSilenceWav(await f.readAsBytes());
+      if (trimmed != null) await f.writeAsBytes(trimmed, flush: true);
+    } catch (_) {}
+    return f;
   }
 
   Future<void> stop() async {
