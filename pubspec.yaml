@@ -94,3 +94,17 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Regenerate after changing tool/make_icon.py or the source portrait:
+#   python3 tool/make_icon.py && dart pub global run flutter_launcher_icons
+# GLOBAL, not a dev dependency: epubx pins image ^3 and flutter_launcher_icons
+# 0.14 needs image ^4, so the two cannot share this project's resolution.
+# ADAPTIVE, the painting as the BACKGROUND layer and a transparent foreground,
+# framed like every other app in the suite (2026-09-26).
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "assets/icon/app_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  min_sdk_android: 21
