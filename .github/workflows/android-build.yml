@@ -67,6 +67,15 @@ jobs:
 
       - name: Build release APK
         run: |
+          # ONE FLUTTER BUILD AT A TIME ON THIS BOX (Eric, 2026-09-26). Every repo has
+          # its own runner here, and the box is also production: on 2026-09-27 00:09
+          # four Gradle builds at once ran it out of memory and the kernel killed one.
+          # Every build step in every repo takes this one lock, so they queue instead.
+          exec 9>/var/lock/monolith-flutter-build.lock
+          echo "Waiting for the box's build lock..."
+          flock -w 5400 9 || { echo "::error::waited 90 minutes for the build lock"; exit 1; }
+          # Stop Gradle's daemon BEFORE the lock is released, so the memory goes with it.
+          trap '(cd android 2>/dev/null && ./gradlew --stop >/dev/null 2>&1) || true' EXIT
           SHA=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%d)
           echo "Building #${{ github.run_number }} · $SHA · $DATE"
