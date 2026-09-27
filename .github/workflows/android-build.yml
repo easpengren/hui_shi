@@ -60,10 +60,20 @@ jobs:
       # is the only thing that runs on a push here, so it is where the checks
       # belong or they never run at all.
       - name: Analyze
-        run: /opt/flutter/bin/flutter analyze --no-fatal-warnings --no-fatal-infos
+        run: |
+          # The box's build lock here too (2026-09-27): `flutter test` and `analyze` run the
+          # Dart compiler, which the OOM killer took in Confucius's runner at 1.7G.
+          exec 9>/var/lock/monolith-flutter-build.lock
+          flock -w 5400 9 || { echo "::error::waited 90 minutes for the build lock"; exit 1; }
+          /opt/flutter/bin/flutter analyze --no-fatal-warnings --no-fatal-infos
 
       - name: Run tests
-        run: /opt/flutter/bin/flutter test
+        run: |
+          # The box's build lock here too (2026-09-27): `flutter test` and `analyze` run the
+          # Dart compiler, which the OOM killer took in Confucius's runner at 1.7G.
+          exec 9>/var/lock/monolith-flutter-build.lock
+          flock -w 5400 9 || { echo "::error::waited 90 minutes for the build lock"; exit 1; }
+          /opt/flutter/bin/flutter test
 
       - name: Build release APK
         run: |
