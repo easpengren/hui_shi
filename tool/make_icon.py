@@ -12,13 +12,17 @@ window, the face filling the circle. The poet Lu Ji (261-303), whose calligraphy
 
 The visible window lies wholly inside the painting; any padding outside it is
 only ever what a mask discards. The legacy square icon is the visible window.
+
+BORDERED: frame() below shrinks the portrait into an ink-ringed medallion on warm paper,
+so the foreground layer is the ring, not the transparent plate described above. A launcher
+mask cuts the outer edge of an adaptive icon, and the ring has to sit inside what is left.
 """
 from __future__ import annotations
 
 import pathlib
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 HERE = pathlib.Path(__file__).resolve().parent.parent
 ASSETS = HERE / "assets/icon"
@@ -68,13 +72,60 @@ def plate() -> tuple[Image.Image, Image.Image]:
     return up(full), up(window)
 
 
+#: The portrait sits as a medallion inside an ink ring, on the suite's warm paper. A launcher
+#: mask cuts the 108 dp canvas to its central 72 dp, so the app cannot draw on the true
+#: outer edge; a ring inside that safe area is the border. Sizes are in dp: the disk is
+#: 64, the ring's outer edge 68 and its stroke 2, so the ring's inner edge meets the disk.
+#: The ring lives in the foreground layer, which ic_launcher.xml insets 16% (73.44 dp).
+PAPER_TONE = (0xE9, 0xD8, 0xB4, 255)
+BORDER_INK = (0x2B, 0x22, 0x1C, 255)
+DISK_DP, RING_DP, STROKE_DP = 64, 68, 2
+CANVAS_DP, WINDOW_DP, FOREGROUND_DP, SUPER, CORNER = 108, 72, 108 * 0.68, 4, 0.18
+
+
+def _circle_mask(px: int) -> Image.Image:
+    big = Image.new("L", (px * SUPER, px * SUPER), 0)
+    ImageDraw.Draw(big).ellipse([0, 0, px * SUPER - 1, px * SUPER - 1], fill=255)
+    return big.resize((px, px), Image.LANCZOS)
+
+
+def _ring(span_dp: float) -> Image.Image:
+    s = SIZE * SUPER
+    outer, stroke = round(s * RING_DP / span_dp), round(s * STROKE_DP / span_dp)
+    lo = (s - outer) // 2
+    ring = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    ImageDraw.Draw(ring).ellipse([lo, lo, lo + outer, lo + outer], outline=BORDER_INK, width=stroke)
+    return ring.resize((SIZE, SIZE), Image.LANCZOS)
+
+
+def _medallion(window: Image.Image, span_dp: float) -> Image.Image:
+    base = Image.new("RGBA", (SIZE, SIZE), PAPER_TONE)
+    d = round(SIZE * DISK_DP / span_dp)
+    base.paste(window.resize((d, d), Image.LANCZOS), ((SIZE - d) // 2,) * 2, _circle_mask(d))
+    return base
+
+
+def frame(assets: pathlib.Path) -> None:
+    window = Image.open(assets / "app_icon.png").convert("RGB")
+    _medallion(window, CANVAS_DP).save(assets / "app_icon_background.png")
+    _ring(FOREGROUND_DP).save(assets / "app_icon_foreground.png")
+    legacy = _medallion(window, WINDOW_DP)
+    legacy.alpha_composite(_ring(WINDOW_DP))
+    big = Image.new("L", (SIZE * SUPER,) * 2, 0)
+    ImageDraw.Draw(big).rounded_rectangle([0, 0, SIZE * SUPER - 1, SIZE * SUPER - 1],
+                                          radius=round(SIZE * SUPER * CORNER), fill=255)
+    legacy.putalpha(big.resize((SIZE, SIZE), Image.LANCZOS))
+    legacy.save(assets / "app_icon.png")
+
+
 def main() -> int:
     background, legacy = plate()
     background.save(ASSETS / "app_icon_background.png")
     legacy.save(ASSETS / "app_icon.png")
     Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0)).save(ASSETS / "app_icon_foreground.png")
+    frame(ASSETS)
     print(f"wrote app_icon.png (visible window), app_icon_background.png (padded plate) "
-          f"and a transparent foreground from {SOURCE.name}")
+          f"and the border ring as the foreground from {SOURCE.name}")
     print("now: dart run flutter_launcher_icons")
     return 0
 
