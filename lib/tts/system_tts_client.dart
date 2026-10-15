@@ -155,18 +155,13 @@ class SystemTtsClient {
       // Must be set before synthesising, or the call returns before the file
       // is written and playback gets a zero-byte source.
       await _tts.awaitSynthCompletion(true);
-      // Android wants a bare filename and writes to its own directory; iOS
-      // accepts a full path. Pass the full path and reconcile below.
-      final result = await _tts.synthesizeToFile(text, target.path);
+      // Without isFullPath, flutter_tts on Android treats the argument as a
+      // bare name and writes into the public Music folder through MediaStore,
+      // so the cache path stays empty and every chunk fell back to speak().
+      final result = await _tts.synthesizeToFile(text, target.path, true);
       if (result != 1) return null;
       if (target.existsSync() && target.lengthSync() > 0) {
         return _trimInPlace(target);
-      }
-
-      // Android ignored the path and used its own external files dir.
-      final produced = File(target.path.split('/').last);
-      if (produced.existsSync() && produced.lengthSync() > 0) {
-        return _trimInPlace(produced);
       }
       return null;
     } catch (_) {
