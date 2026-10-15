@@ -365,7 +365,7 @@ class _ContentAreaState extends State<_ContentArea> {
     final query = _searchController.text.trim();
     final baseStyle = TextStyle(
       fontSize: 17,
-      height: 1.6,
+      height: 1.4,
       color: Theme.of(
         context,
       ).colorScheme.onSurface.withValues(alpha: isCurrent ? 1.0 : 0.75),
@@ -562,8 +562,11 @@ class _ContentAreaState extends State<_ContentArea> {
                       onTap: () => state.seekAndPlay(index),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.symmetric(vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: isCurrent
                               ? Theme.of(

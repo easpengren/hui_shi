@@ -141,8 +141,8 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
         playbackStatus == PlaybackStatus.paused ? resume() : play();
     _handler?.onPause = pause;
     _handler?.onStop = stop;
-    _handler?.onNext = () => seekToChunk(currentChunkIndex + 1);
-    _handler?.onPrevious = () => seekToChunk(currentChunkIndex - 1);
+    _handler?.onNext = () => _skipFromControls(currentChunkIndex + 1);
+    _handler?.onPrevious = () => _skipFromControls(currentChunkIndex - 1);
 
     _statusSub = _playback.statusStream.listen((s) {
       playbackStatus = s;
@@ -685,6 +685,18 @@ class ReaderState extends ChangeNotifier with WidgetsBindingObserver {
     await _ensureReady();
     _scheduleProgressSave();
     await _playback.seekToChunk(index);
+  }
+
+  /// Next/Previous from the notification, lock screen or a headset. A skip
+  /// always leaves it reading: from a paused or finished state the controls
+  /// would otherwise be left with nothing to press.
+  Future<void> _skipFromControls(int index) async {
+    await _ensureReady();
+    if (index < 0 || index >= chunks.length) return;
+    final active = _playback.status == PlaybackStatus.playing ||
+        _playback.status == PlaybackStatus.loading;
+    await seekToChunk(index);
+    if (!active) await _playback.play();
   }
 
   PlaybackStatus get livePlaybackStatus =>

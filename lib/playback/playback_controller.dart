@@ -30,6 +30,7 @@ class PlaybackController {
   int _currentIndex = 0;
   bool _stopped = false;
   int _playSession = 0;
+  bool _synthesisDone = false;
 
   ConcatenatingAudioSource? _playlist;
   final List<int> _playlistChunkIndexes = [];
@@ -173,9 +174,17 @@ class PlaybackController {
       });
 
       _playerCompleteSub?.cancel();
+      // "Completed" only means the book is over once every chunk has been
+      // appended. Before that it is the player running dry — an empty playlist
+      // at the start, or a clip that outlasted the synthesis behind it — and
+      // announcing idle then drops the media session and its foreground service
+      // in the middle of reading. [_synthesizeAndAppend] resumes the player.
+      _synthesisDone = false;
       _playerCompleteSub = _player.playerStateStream
           .where((s) => s.processingState == ProcessingState.completed)
-          .listen((_) => _setStatus(PlaybackStatus.idle));
+          .listen((_) {
+            if (_synthesisDone) _setStatus(PlaybackStatus.idle);
+          });
 
       // Synthesize in background; start playback as soon as first chunk lands.
       _synthesizeAndAppend(_bookId!, _currentIndex, sessionId).ignore();
@@ -221,6 +230,20 @@ class PlaybackController {
           if (sessionId != _playSession) break;
           _setStatus(PlaybackStatus.playing);
           await _player.play();
+        } else if (_status == PlaybackStatus.playing &&
+            _player.processingState == ProcessingState.completed) {
+          // The player ran out before this clip was ready: pick up at it.
+          await _player.seek(
+            Duration.zero,
+            index: _playlistChunkIndexes.length - 1,
+          );
+          await _player.play();
+        }
+      }
+      if (sessionId == _playSession && !_stopped) {
+        _synthesisDone = true;
+        if (started && _player.processingState == ProcessingState.completed) {
+          _setStatus(PlaybackStatus.idle);
         }
       }
       if (!started && !_stopped && sessionId == _playSession) {
@@ -257,6 +280,15 @@ class PlaybackController {
   }
 
   Future<void> stop() async {
+    await _halt();
+    _setStatus(PlaybackStatus.idle);
+  }
+
+  /// Everything [stop] does except announce idle. A skip uses this so the media
+  /// session never sees the gap: idle makes audio_service drop the notification
+  /// and the foreground service, and starting them again a moment later is what
+  /// made the lock-screen controls vanish and reappear on every Next/Previous.
+  Future<void> _halt() async {
     _stopped = true;
     _playSession += 1;
     _playerIndexSub?.cancel();
@@ -266,18 +298,21 @@ class PlaybackController {
     _playlistChunkIndexes.clear();
     await _player.stop();
     await _system.stop();
-    _setStatus(PlaybackStatus.idle);
   }
 
   /// Jump to [index] and restart playback from there.
   Future<void> seekToChunk(int index) async {
     if (index < 0 || index >= _chunks.length) return;
     final wasPlaying = _status == PlaybackStatus.playing;
-    await stop();
+    await _halt();
     _stopped = false;
     _currentIndex = index;
     _emitChunk(index);
-    if (wasPlaying) await play();
+    if (wasPlaying) {
+      await play();
+    } else {
+      _setStatus(PlaybackStatus.idle);
+    }
   }
 
   void _setStatus(PlaybackStatus s) {
