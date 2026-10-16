@@ -20,7 +20,7 @@ const double _defaultThreshold = 0.01; // ~-40 dBFS
 const int _defaultLeadMarginMs = 20;
 const int _defaultTrailMarginMs = 90;
 
-final _sentenceEndRegex = RegExp('[.!?]["\'”’»)\\]]*\\s*\$');
+final _sentenceEndRegex = RegExp('[.!?。！？…]["\'”’»)\\]」』）]*\\s*\$');
 
 /// How much of the engine's trailing silence to keep after [text]: a full
 /// sentence earns a breath, a clause or an unpunctuated list item a shorter one.

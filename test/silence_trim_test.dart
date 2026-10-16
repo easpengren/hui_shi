@@ -12,6 +12,9 @@ void main() {
     final full = trailPauseMsFor('He left.');
     expect(trailPauseMsFor('He said "go!"'), full);
     expect(trailPauseMsFor('Is it? '), full);
+    expect(trailPauseMsFor('天下之道。'), full);
+    expect(trailPauseMsFor('「可乎？」'), full);
+    expect(trailPauseMsFor('故曰，'), lessThan(full));
     expect(trailPauseMsFor('First, the reasons:'), lessThan(full));
     expect(trailPauseMsFor('Apples and pears'), lessThan(full));
   });
