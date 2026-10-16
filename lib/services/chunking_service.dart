@@ -59,8 +59,13 @@ const _sentenceStarters = <String>{
 /// Matching the whole run is what stops `. . . .` from being split into four
 /// sentences that are each a single period — chunks TTS would either skip or
 /// read aloud as punctuation.
-final _terminatorRegex =
-    RegExp(r'[.!?](?:[ \t]*[.!?])*["' "'" r'”’»)\]]*(?:\s+|$)');
+///
+/// Chinese terminators (。！？) are written with no space after them, so they
+/// are a second alternative that does not require one.
+final _terminatorRegex = RegExp(
+  r'[.!?](?:[ \t]*[.!?])*["' "'" r'”’»)\]]*(?:\s+|$)'
+  r'|[。！？]+[」』”’）)]*\s*',
+);
 
 /// The word immediately preceding a period, including any internal periods so
 /// that `U.S` and `e.g` arrive intact.
