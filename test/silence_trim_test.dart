@@ -8,6 +8,14 @@ import 'package:lu_ji/tts/wav_utils.dart';
 /// at each chunk boundary. These guard the trim that removes it — remove the
 /// trim and a padded clip stops getting shorter, and the pause is back.
 void main() {
+  test('a finished sentence keeps a longer pause than a clause or list item', () {
+    final full = trailPauseMsFor('He left.');
+    expect(trailPauseMsFor('He said "go!"'), full);
+    expect(trailPauseMsFor('Is it? '), full);
+    expect(trailPauseMsFor('First, the reasons:'), lessThan(full));
+    expect(trailPauseMsFor('Apples and pears'), lessThan(full));
+  });
+
   const sr = 16000;
 
   Float32List padded({

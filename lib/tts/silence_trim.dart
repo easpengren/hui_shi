@@ -20,6 +20,14 @@ const double _defaultThreshold = 0.01; // ~-40 dBFS
 const int _defaultLeadMarginMs = 20;
 const int _defaultTrailMarginMs = 90;
 
+final _sentenceEndRegex = RegExp('[.!?]["\'”’»)\\]]*\\s*\$');
+
+/// How much of the engine's trailing silence to keep after [text]: a full
+/// sentence earns a breath, a clause or an unpunctuated list item a shorter one.
+/// Trimming every clip to the same ~100 ms made the reading run together.
+int trailPauseMsFor(String text) =>
+    _sentenceEndRegex.hasMatch(text) ? 380 : 220;
+
 /// The [start, end] sample bounds to keep, or null when the whole clip is
 /// silence (leave it alone) or there is nothing to trim.
 List<int>? _keepBounds(

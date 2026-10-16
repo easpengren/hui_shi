@@ -30,7 +30,10 @@ class TtsCache {
   String _hash(String bookId, int chunkIndex, String voice, double speed) {
     // Two decimals: the slider moves in tenths, and a raw double would put float
     // noise in the key and miss a cache entry that is really there.
-    final raw = '$bookId::$chunkIndex::$voice::${speed.toStringAsFixed(2)}';
+    // `pause2` marks clips trimmed with per-sentence pauses; older files kept
+    // a flat 90 ms and would otherwise be replayed from the cache.
+    final raw =
+        '$bookId::$chunkIndex::$voice::${speed.toStringAsFixed(2)}::pause2';
     return sha1.convert(utf8.encode(raw)).toString();
   }
 

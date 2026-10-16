@@ -161,7 +161,7 @@ class SystemTtsClient {
       final result = await _tts.synthesizeToFile(text, target.path, true);
       if (result != 1) return null;
       if (target.existsSync() && target.lengthSync() > 0) {
-        return _trimInPlace(target);
+        return _trimInPlace(target, text);
       }
       return null;
     } catch (_) {
@@ -174,9 +174,12 @@ class SystemTtsClient {
   /// Trim the engine's padding silence from a freshly written clip, in place,
   /// so system-TTS playback flows like the Piper path. Best-effort: on any
   /// problem the file is returned untouched. See tts/silence_trim.dart.
-  Future<File> _trimInPlace(File f) async {
+  Future<File> _trimInPlace(File f, String text) async {
     try {
-      final trimmed = trimSilenceWav(await f.readAsBytes());
+      final trimmed = trimSilenceWav(
+        await f.readAsBytes(),
+        trailMarginMs: trailPauseMsFor(text),
+      );
       if (trimmed != null) await f.writeAsBytes(trimmed, flush: true);
     } catch (_) {}
     return f;

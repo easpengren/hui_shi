@@ -255,7 +255,11 @@ class PiperTtsClient {
     // Trim the padding silence the model pads each utterance with, so chunks
     // played back to back flow with a short gap instead of stacking into an
     // unnatural pause at every boundary. See tts/silence_trim.dart.
-    final trimmed = trimSilenceSamples(result.samples, result.sampleRate);
+    final trimmed = trimSilenceSamples(
+      result.samples,
+      result.sampleRate,
+      trailMarginMs: trailPauseMsFor(text),
+    );
     final wav = float32ToWav(trimmed, result.sampleRate);
     return _cache.put(bookId, chunkIndex, _voice, _speed, wav);
   }
